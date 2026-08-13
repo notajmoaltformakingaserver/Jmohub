@@ -245,50 +245,51 @@ local function createSlider(parent, labelText, minValue, maxValue, defaultValue,
 	handle.Text = ""
 	handle.Parent = track
 
-	local slider = {
-		label = label,
-		track = track,
-		fill = fill,
-		handle = handle,
-		minValue = minValue,
-		maxValue = maxValue,
-		value = defaultValue,
-	}
-
 	local dragging = false
+	local activeInput = nil
+	local moveConnection
+	local endConnection
+
 	local function setSliderValue(value)
 		local clamped = clamp(value, minValue, maxValue)
 		local ratio = (clamped - minValue) / (maxValue - minValue)
-		slider.value = clamped
-		label.Text = labelText .. " : " .. tostring(math.floor(clamped))
+		label.Text = labelText .. " : " .. tostring(math.floor(clamped + 0.5))
 		fill.Size = UDim2.new(ratio, 0, 1, 0)
 		handle.Position = UDim2.new(ratio, -7, 0.5, -7)
-		if callback then callback(math.floor(clamped)) end
+		if callback then callback(math.floor(clamped + 0.5)) end
 	end
 
-	local function setFromMouse(mouseX)
+	local function setFromScreenX(screenX)
 		if not track.AbsolutePosition or not track.AbsoluteSize then return end
 		local xMin = track.AbsolutePosition.X
 		local xMax = xMin + track.AbsoluteSize.X
-		local ratio = clamp((mouseX - xMin) / math.max(1, xMax - xMin), 0, 1)
+		local span = math.max(1, xMax - xMin)
+		local ratio = clamp((screenX - xMin) / span, 0, 1)
 		local rawValue = minValue + (maxValue - minValue) * ratio
 		setSliderValue(rawValue)
 	end
 
-	local moveConnection
-	local endConnection
 	local function beginDrag(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
 		dragging = true
-		setFromMouse(input.Position.X)
+		activeInput = input
+		setFromScreenX(input.Position.X)
+
 		moveConnection = UserInputService.InputChanged:Connect(function(input2)
-			if dragging and input2.UserInputType == Enum.UserInputType.MouseMovement then
-				setFromMouse(input2.Position.X)
+			if not dragging or not input2 then return end
+			if input2 == activeInput and (input2.UserInputType == Enum.UserInputType.MouseMovement or input2.UserInputType == Enum.UserInputType.Touch) then
+				setFromScreenX(input2.Position.X)
 			end
 		end)
+
 		endConnection = UserInputService.InputEnded:Connect(function(input2)
-			if input2.UserInputType == Enum.UserInputType.MouseButton1 then
+			if not input2 then return end
+			if input2 == activeInput or input2.UserInputType == Enum.UserInputType.MouseButton1 or input2.UserInputType == Enum.UserInputType.Touch then
 				dragging = false
+				activeInput = nil
 				if moveConnection then moveConnection:Disconnect() end
 				if endConnection then endConnection:Disconnect() end
 			end
@@ -297,7 +298,11 @@ local function createSlider(parent, labelText, minValue, maxValue, defaultValue,
 
 	handle.InputBegan:Connect(beginDrag)
 	track.InputBegan:Connect(beginDrag)
-	setSliderValue(defaultValue)
+
+	local startRatio = clamp((defaultValue - minValue) / (maxValue - minValue), 0, 1)
+	fill.Size = UDim2.new(startRatio, 0, 1, 0)
+	handle.Position = UDim2.new(startRatio, -7, 0.5, -7)
+	label.Text = labelText .. " : " .. tostring(math.floor(defaultValue + 0.5))
 	return field
 end
 
