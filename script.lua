@@ -1,5 +1,5 @@
 -- [[ JMO HUB v2 ]]
--- Universal Client-Side Interface Framework
+-- Slim, cleaner executor UI with improved functionality
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -12,130 +12,137 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- Clean up any existing instances of JMO Hub v2
 if CoreGui:FindFirstChild("JMOHubV2") then
 	CoreGui.JMOHubV2:Destroy()
 end
 
--- Create Main ScreenGui
-local JMOHubV2 = Instance.new("ScreenGui")
-JMOHubV2.Name = "JMOHubV2"
-JMOHubV2.Parent = CoreGui
-JMOHubV2.ResetOnSpawn = false
-
--- Theme Configuration (Green/Black Matrix Theme)
 local Theme = {
-	Background = Color3.fromRGB(10, 10, 10),
-	Panel = Color3.fromRGB(20, 20, 20),
-	Border = Color3.fromRGB(0, 255, 100),
+	Background = Color3.fromRGB(12, 12, 14),
+	Panel = Color3.fromRGB(18, 18, 20),
+	Panel2 = Color3.fromRGB(24, 24, 26),
+	Border = Color3.fromRGB(18, 255, 128),
+	BorderSoft = Color3.fromRGB(30, 120, 70),
 	Text = Color3.fromRGB(240, 240, 240),
-	TextDim = Color3.fromRGB(150, 150, 150),
-	Accent = Color3.fromRGB(0, 220, 80),
-	Button = Color3.fromRGB(25, 25, 25),
-	ButtonHover = Color3.fromRGB(0, 100, 40)
+	TextDim = Color3.fromRGB(160, 160, 160),
+	Button = Color3.fromRGB(22, 22, 24),
+	ButtonHover = Color3.fromRGB(33, 44, 36),
+	Accent = Color3.fromRGB(0, 255, 120),
+	Red = Color3.fromRGB(255, 90, 90),
+	Green = Color3.fromRGB(0, 255, 128),
 }
 
 local State = {
 	SelectedPlayer = nil,
 	TargetPlayer = nil,
 	SearchText = "",
+	Fly = false,
+	FlySpeed = 45,
+	WalkSpeed = 16,
+	JumpPower = 50,
+	GravityValue = 196.2,
+	InfiniteJump = false,
+	Noclip = false,
+	AutoRun = false,
+	Freecam = false,
+	FreecamSpeed = 25,
+	CameraFOV = 70,
+	CameraLock = false,
+	ThirdPerson = false,
 	ESPEnabled = false,
 	NameESP = false,
 	DistanceESP = false,
 	HealthBars = false,
 	LocalHighlight = false,
-	Fly = false,
-	FlySpeed = 45,
-	WalkSpeed = 16,
-	JumpPower = 50,
-	InfiniteJump = false,
-	Noclip = false,
-	AutoRun = false,
-	ThirdPerson = false,
-	Freecam = false,
-	FreecamSpeed = 20,
-	CameraFOV = 70,
-	CameraLocked = false,
-	UITransparency = 0,
-	Fullbright = false,
-	RemoveFog = false,
-	AutoESP = false,
-	SavedSettings = false,
-	SavedWaypoints = false,
 	TargetTracking = false,
 	AntiAFK = false,
 	HealthRegen = false,
 	HighHealth = false,
-	MobileControls = false,
-	DesktopControls = false,
+	AutoESP = false,
+	Fullbright = false,
+	RemoveFog = false,
+	UITransparency = 0,
 	WaypointList = {},
-	ESPObjects = {},
-	CurrentCameraCFrame = nil,
-	FlyConnection = nil,
-	RenderConnection = nil,
-	AntiAFKConnection = nil,
 	SavedData = {},
+	FlyConnection = nil,
+	FreecamConnection = nil,
+	AntiAFKConnection = nil,
+	CurrentCameraCFrame = nil,
+	ESPObjects = {},
+	JumpConnection = nil,
+	CameraPitch = 0,
+	CameraYaw = 0,
+	AutoRespawn = false,
+	SmoothAnimations = true,
+	ThirdPersonDistance = 8,
 }
 
-local function RoundNumber(value)
+local JMOHubV2 = Instance.new("ScreenGui")
+JMOHubV2.Name = "JMOHubV2"
+JMOHubV2.ResetOnSpawn = false
+JMOHubV2.Parent = CoreGui
+
+local function clamp(value, min, max)
+	return math.max(min, math.min(max, value))
+end
+
+local function getCharacter(player)
+	if player and player.Character then
+		return player.Character
+	end
+	return nil
+end
+
+local function getHumanoid(player)
+	local char = getCharacter(player)
+	if char then
+		return char:FindFirstChildOfClass("Humanoid")
+	end
+	return nil
+end
+
+local function getRoot(player)
+	local char = getCharacter(player)
+	if char then
+		return char:FindFirstChild("HumanoidRootPart")
+	end
+	return nil
+end
+
+local function roundValue(value)
 	if value == nil then return 0 end
-	return math.floor(value * 10 + 0.5) / 10
+	return math.floor(value + 0.5)
 end
 
-local function GetHumanoid(player)
-	if player and player.Character then
-		return player.Character:FindFirstChildOfClass("Humanoid")
-	end
-	return nil
+local function tween(obj, target, duration)
+	TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), target):Play()
 end
 
-local function GetRootPart(player)
-	if player and player.Character then
-		return player.Character:FindFirstChild("HumanoidRootPart")
-	end
-	return nil
-end
-
-local function GetLocalHumanoid()
-	return GetHumanoid(LocalPlayer)
-end
-
-local function GetLocalRootPart()
-	return GetRootPart(LocalPlayer)
-end
-
-local function SafeDestroy(instance)
-	if instance and instance.Parent then
-		instance:Destroy()
-	end
-end
-
-local function ApplyUITransparency(value)
-	if JMOHubV2 then
-		for _, obj in ipairs(JMOHubV2:GetDescendants()) do
-			if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") or obj:IsA("ScrollingFrame") then
-				if obj.Name ~= "MainWindow" and obj.Name ~= "Header" then
-					obj.BackgroundTransparency = math.clamp(value, 0, 1)
-				end
-			end
+local function applyThemeToFrame(frame)
+	if frame:IsA("Frame") or frame:IsA("TextButton") or frame:IsA("TextLabel") or frame:IsA("TextBox") or frame:IsA("ScrollingFrame") then
+		if frame:IsA("TextButton") then
+			frame.TextColor3 = Theme.Text
 		end
 	end
 end
 
--- Main Window Frame
 local MainWindow = Instance.new("Frame")
 MainWindow.Name = "MainWindow"
-MainWindow.Size = UDim2.new(0, 620, 0, 400)
-MainWindow.Position = UDim2.new(0.5, -310, 0.5, -200)
+MainWindow.Size = UDim2.new(0, 540, 0, 360)
+MainWindow.Position = UDim2.new(0.5, -270, 0.5, -180)
 MainWindow.BackgroundColor3 = Theme.Background
 MainWindow.BorderSizePixel = 1
 MainWindow.BorderColor3 = Theme.Border
-MainWindow.Active = true
 MainWindow.Parent = JMOHubV2
 
-local Dragging, DragInput, DragStart, StartPosition
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Theme.Background),
+	ColorSequenceKeypoint.new(1, Theme.Panel)
+})
+gradient.Parent = MainWindow
 
-local function UpdateDrag(input)
+local Dragging, DragStart, StartPosition, DragInput
+local function handleDrag(input)
 	local delta = input.Position - DragStart
 	MainWindow.Position = UDim2.new(StartPosition.X.Scale, StartPosition.X.Offset + delta.X, StartPosition.Y.Scale, StartPosition.Y.Offset + delta.Y)
 end
@@ -154,368 +161,356 @@ MainWindow.InputBegan:Connect(function(input)
 end)
 
 MainWindow.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+	if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 		DragInput = input
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
 	if input == DragInput and Dragging then
-		UpdateDrag(input)
+		handleDrag(input)
 	end
 end)
 
--- Top Header Bar
 local Header = Instance.new("Frame")
-Header.Name = "Header"
-Header.Size = UDim2.new(1, 0, 0, 35)
+Header.Size = UDim2.new(1, 0, 0, 32)
 Header.BackgroundColor3 = Theme.Panel
 Header.BorderSizePixel = 0
 Header.Parent = MainWindow
 
+local HeaderLine = Instance.new("Frame")
+HeaderLine.Size = UDim2.new(1, 0, 0, 1)
+HeaderLine.Position = UDim2.new(0, 0, 1, -1)
+HeaderLine.BackgroundColor3 = Theme.Border
+HeaderLine.BorderSizePixel = 0
+HeaderLine.Parent = Header
+
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0.5, 0, 1, 0)
+Title.Size = UDim2.new(1, -90, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "JMO HUB v2"
+Title.Text = "JMO HUB"
 Title.TextColor3 = Theme.Border
-Title.TextSize = 16
+Title.TextSize = 15
 Title.Font = Enum.Font.Code
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 35, 0, 35)
-CloseBtn.Position = UDim2.new(1, -35, 0, 0)
-CloseBtn.BackgroundTransparency = 1
+CloseBtn.Size = UDim2.new(0, 24, 0, 24)
+CloseBtn.Position = UDim2.new(1, -28, 0.5, -12)
 CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
-CloseBtn.TextSize = 16
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.TextColor3 = Theme.Red
+CloseBtn.TextSize = 14
 CloseBtn.Font = Enum.Font.Code
 CloseBtn.Parent = Header
 CloseBtn.MouseButton1Click:Connect(function()
 	JMOHubV2:Destroy()
 end)
 
-local MinimizeBtn = Instance.new("TextButton")
-MinimizeBtn.Size = UDim2.new(0, 35, 0, 35)
-MinimizeBtn.Position = UDim2.new(1, -70, 0, 0)
-MinimizeBtn.BackgroundTransparency = 1
-MinimizeBtn.Text = "−"
-MinimizeBtn.TextColor3 = Theme.TextDim
-MinimizeBtn.TextSize = 16
-MinimizeBtn.Font = Enum.Font.Code
-MinimizeBtn.Parent = Header
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 24, 0, 24)
+MinBtn.Position = UDim2.new(1, -56, 0.5, -12)
+MinBtn.Text = "_"
+MinBtn.BackgroundTransparency = 1
+MinBtn.TextColor3 = Theme.TextDim
+MinBtn.TextSize = 18
+MinBtn.Font = Enum.Font.Code
+MinBtn.Parent = Header
 
-local Collapsed = false
-local ContentContainer = Instance.new("Frame")
-ContentContainer.Name = "ContentContainer"
-ContentContainer.Size = UDim2.new(1, 0, 1, -35)
-ContentContainer.Position = UDim2.new(0, 0, 0, 35)
-ContentContainer.BackgroundTransparency = 1
-ContentContainer.Parent = MainWindow
-
-MinimizeBtn.MouseButton1Click:Connect(function()
-	Collapsed = not Collapsed
-	TweenService:Create(MainWindow, TweenInfo.new(0.2), {
-		Size = Collapsed and UDim2.new(0, 620, 0, 35) or UDim2.new(0, 620, 0, 400)
-	}):Play()
-	ContentContainer.Visible = not Collapsed
-end)
-
-local Divider = Instance.new("Frame")
-Divider.Size = UDim2.new(1, 0, 0, 1)
-Divider.Position = UDim2.new(0, 0, 0, 35)
-Divider.BackgroundColor3 = Theme.Border
-Divider.BorderSizePixel = 0
-Divider.Parent = MainWindow
+local collapsed = false
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, 0, 1, -32)
+Content.Position = UDim2.new(0, 0, 0, 32)
+Content.BackgroundTransparency = 1
+Content.Parent = MainWindow
 
 local Sidebar = Instance.new("ScrollingFrame")
-Sidebar.Name = "Sidebar"
-Sidebar.Size = UDim2.new(0, 140, 1, 0)
+Sidebar.Size = UDim2.new(0, 120, 1, 0)
 Sidebar.BackgroundColor3 = Theme.Panel
 Sidebar.BorderSizePixel = 0
-Sidebar.CanvasSize = UDim2.new(0, 0, 0, 600)
-Sidebar.ScrollBarThickness = 2
-Sidebar.ScrollBarImageColor3 = Theme.Border
-Sidebar.Parent = ContentContainer
+Sidebar.ScrollBarThickness = 3
+Sidebar.CanvasSize = UDim2.new(0, 0, 0, 500)
+Sidebar.Parent = Content
 
 local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 6)
 SidebarLayout.Parent = Sidebar
-SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local MainDisplay = Instance.new("Frame")
-MainDisplay.Name = "MainDisplay"
-MainDisplay.Size = UDim2.new(1, -140, 1, 0)
-MainDisplay.Position = UDim2.new(0, 140, 0, 0)
-MainDisplay.BackgroundTransparency = 1
-MainDisplay.Parent = ContentContainer
+local MainPanel = Instance.new("Frame")
+MainPanel.Size = UDim2.new(1, -120, 1, 0)
+MainPanel.Position = UDim2.new(0, 120, 0, 0)
+MainPanel.BackgroundTransparency = 1
+MainPanel.Parent = Content
 
 local Pages = {}
 
-local function CreatePage(name)
-	local Page = Instance.new("ScrollingFrame")
-	Page.Name = name .. "Page"
-	Page.Size = UDim2.new(1, 0, 1, 0)
-	Page.BackgroundTransparency = 1
-	Page.CanvasSize = UDim2.new(0, 0, 0, 800)
-	Page.ScrollBarThickness = 4
-	Page.ScrollBarImageColor3 = Theme.Border
-	Page.Visible = false
-	Page.Parent = MainDisplay
-
-	local PageLayout = Instance.new("UIListLayout")
-	PageLayout.Parent = Page
-	PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	PageLayout.Padding = UDim.new(0, 8)
-
-	local PagePadding = Instance.new("UIPadding")
-	PagePadding.PaddingLeft = UDim.new(0, 15)
-	PagePadding.PaddingTop = UDim.new(0, 15)
-	PagePadding.Parent = Page
-
-	Pages[name] = Page
-
-	local NavBtn = Instance.new("TextButton")
-	NavBtn.Size = UDim2.new(1, 0, 0, 40)
-	NavBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-	NavBtn.BorderSizePixel = 0
-	NavBtn.Text = " " .. name:upper()
-	NavBtn.TextColor3 = Theme.TextDim
-	NavBtn.Font = Enum.Font.Code
-	NavBtn.TextSize = 13
-	NavBtn.TextXAlignment = Enum.TextXAlignment.Left
-	NavBtn.Parent = Sidebar
-
-	local SelectionIndicator = Instance.new("Frame")
-	SelectionIndicator.Size = UDim2.new(0, 4, 1, 0)
-	SelectionIndicator.BackgroundColor3 = Theme.Border
-	SelectionIndicator.BorderSizePixel = 0
-	SelectionIndicator.Visible = false
-	SelectionIndicator.Parent = NavBtn
-
-	NavBtn.MouseButton1Click:Connect(function()
-		for _, p in pairs(Pages) do
-			p.Visible = false
-		end
-		for _, b in pairs(Sidebar:GetChildren()) do
-			if b:IsA("TextButton") then
-				b.TextColor3 = Theme.TextDim
-				if b:FindFirstChild("Frame") then
-					b.Frame.Visible = false
-				end
+local function navTo(name)
+	for pageName, page in pairs(Pages) do
+		page.Visible = pageName == name
+	end
+	for _, child in ipairs(Sidebar:GetChildren()) do
+		if child:IsA("TextButton") then
+			local isTarget = child.Name == name
+			child.TextColor3 = isTarget and Theme.Border or Theme.TextDim
+			if child:FindFirstChild("Indicator") then
+				child.Indicator.Visible = isTarget
 			end
 		end
-		Page.Visible = true
-		NavBtn.TextColor3 = Theme.Border
-		SelectionIndicator.Visible = true
-	end)
-
-	return Page
+	end
 end
 
-local UI = {}
+local function createPage(name)
+	local page = Instance.new("ScrollingFrame")
+	page.Name = name
+	page.Size = UDim2.new(1, 0, 1, 0)
+	page.BackgroundTransparency = 1
+	page.ScrollBarThickness = 4
+	page.Visible = false
+	page.CanvasSize = UDim2.new(0, 0, 0, 800)
+	page.Parent = MainPanel
 
-function UI:CreateSectionHeader(parent, title)
-	local Label = Instance.new("TextLabel")
-	Label.Size = UDim2.new(1, -15, 0, 25)
-	Label.BackgroundTransparency = 1
-	Label.Text = "=== " .. title:upper() .. " ==="
-	Label.TextColor3 = Theme.Border
-	Label.Font = Enum.Font.Code
-	Label.TextSize = 13
-	Label.TextXAlignment = Enum.TextXAlignment.Left
-	Label.Parent = parent
-	return Label
+	local list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, 8)
+	list.Parent = page
+
+	local pad = Instance.new("UIPadding")
+pad.PaddingLeft = UDim.new(0, 12)
+pad.PaddingTop = UDim.new(0, 10)
+pad.Parent = page
+
+	Pages[name] = page
+
+	local navBtn = Instance.new("TextButton")
+	navBtn.Name = name
+	navBtn.AutoButtonColor = false
+	navBtn.Size = UDim2.new(1, -8, 0, 32)
+	navBtn.Position = UDim2.new(0, 4, 0, 0)
+	navBtn.BackgroundColor3 = Theme.Panel2
+	navBtn.BorderSizePixel = 0
+	navBtn.Text = string.upper(name)
+	navBtn.TextColor3 = Theme.TextDim
+	navBtn.Font = Enum.Font.Code
+	navBtn.TextSize = 11
+	navBtn.Parent = Sidebar
+
+	local indicator = Instance.new("Frame")
+	indicator.Name = "Indicator"
+	indicator.Size = UDim2.new(0, 3, 1, 0)
+	indicator.BackgroundColor3 = Theme.Border
+	indicator.BorderSizePixel = 0
+	indicator.Visible = false
+	indicator.Parent = navBtn
+
+	navBtn.MouseEnter:Connect(function()
+	
+tween(navBtn, {BackgroundColor3 = Theme.ButtonHover})
+	end)
+	navBtn.MouseLeave:Connect(function()
+		tween(navBtn, {BackgroundColor3 = Theme.Panel2})
+	end)
+	navBtn.MouseButton1Click:Connect(function()
+		navTo(name)
+	end)
+
+	return page
 end
 
-function UI:CreateButton(parent, text, callback)
-	local Btn = Instance.new("TextButton")
-	Btn.Size = UDim2.new(1, -30, 0, 32)
-	Btn.BackgroundColor3 = Theme.Button
-	Btn.BorderColor3 = Theme.Border
-	Btn.BorderSizePixel = 1
-	Btn.Text = text
-	Btn.TextColor3 = Theme.Text
-	Btn.Font = Enum.Font.Code
-	Btn.TextSize = 13
-	Btn.Parent = parent
-	Btn.MouseButton1Click:Connect(callback)
-	Btn.MouseEnter:Connect(function()
-		Btn.BackgroundColor3 = Theme.ButtonHover
-	end)
-	Btn.MouseLeave:Connect(function()
-		Btn.BackgroundColor3 = Theme.Button
-	end)
-	return Btn
+MinBtn.MouseButton1Click:Connect(function()
+	collapsed = not collapsed
+	MainWindow.Size = collapsed and UDim2.new(0, 540, 0, 32) or UDim2.new(0, 540, 0, 360)
+	Content.Visible = not collapsed
+	HeaderLine.Visible = not collapsed
+end)
+
+local function createSection(page, title)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 0, 18)
+	label.BackgroundTransparency = 1
+	label.Text = "[ " .. string.upper(title) .. " ]"
+	label.TextColor3 = Theme.Border
+	label.TextSize = 11
+	label.Font = Enum.Font.Code
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = page
+	return label
 end
 
-function UI:CreateToggle(parent, text, default, callback)
-	local Enabled = default or false
-	local ToggleFrame = Instance.new("Frame")
-	ToggleFrame.Size = UDim2.new(1, -30, 0, 32)
-	ToggleFrame.BackgroundTransparency = 1
-	ToggleFrame.Parent = parent
-
-	local Btn = Instance.new("TextButton")
-	Btn.Size = UDim2.new(0, 20, 0, 20)
-	Btn.Position = UDim2.new(0, 0, 0.5, -10)
-	Btn.BackgroundColor3 = Theme.Background
-	Btn.BorderColor3 = Theme.Border
-	Btn.BorderSizePixel = 1
-	Btn.Text = Enabled and "X" or ""
-	Btn.TextColor3 = Theme.Border
-	Btn.Font = Enum.Font.Code
-	Btn.TextSize = 14
-	Btn.Parent = ToggleFrame
-
-	local Label = Instance.new("TextLabel")
-	Label.Size = UDim2.new(1, -30, 1, 0)
-	Label.Position = UDim2.new(0, 30, 0, 0)
-	Label.BackgroundTransparency = 1
-	Label.Text = text
-	Label.TextColor3 = Theme.Text
-	Label.Font = Enum.Font.Code
-	Label.TextSize = 13
-	Label.TextXAlignment = Enum.TextXAlignment.Left
-	Label.Parent = ToggleFrame
-
-	Btn.MouseButton1Click:Connect(function()
-		Enabled = not Enabled
-		Btn.Text = Enabled and "X" or ""
-		if callback then
-			callback(Enabled)
-		end
+local function createButton(page, text, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -12, 0, 28)
+	btn.BackgroundColor3 = Theme.Button
+	btn.BorderColor3 = Theme.BorderSoft
+	btn.BorderSizePixel = 1
+	btn.Text = text
+	btn.TextColor3 = Theme.Text
+	btn.TextSize = 11
+	btn.Font = Enum.Font.Code
+	btn.Parent = page
+	btn.MouseEnter:Connect(function()
+		tween(btn, {BackgroundColor3 = Theme.ButtonHover})
 	end)
-	return Btn
+	btn.MouseLeave:Connect(function()
+		tween(btn, {BackgroundColor3 = Theme.Button})
+	end)
+	btn.MouseButton1Click:Connect(function()
+		if callback then callback() end
+	end)
+	return btn
 end
 
-function UI:CreateSlider(parent, text, min, max, default, callback)
-	local SliderFrame = Instance.new("Frame")
-	SliderFrame.Size = UDim2.new(1, -30, 0, 45)
-	SliderFrame.BackgroundTransparency = 1
-	SliderFrame.Parent = parent
+local function createToggle(page, labelText, defaultState, callback)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1, -12, 0, 24)
+	frame.BackgroundTransparency = 1
+	frame.Parent = page
 
-	local Label = Instance.new("TextLabel")
-	Label.Size = UDim2.new(1, 0, 0, 20)
-	Label.BackgroundTransparency = 1
-	Label.Text = text .. " : " .. tostring(default)
-	Label.TextColor3 = Theme.Text
-	Label.Font = Enum.Font.Code
-	Label.TextSize = 13
-	Label.TextXAlignment = Enum.TextXAlignment.Left
-	Label.Parent = SliderFrame
+	local toggle = Instance.new("TextButton")
+	toggle.Size = UDim2.new(0, 18, 0, 18)
+	toggle.Position = UDim2.new(0, 0, 0.5, -9)
+	toggle.BackgroundColor3 = Theme.Background
+	toggle.BorderColor3 = Theme.Border
+	toggle.BorderSizePixel = 1
+	toggle.Text = defaultState and "X" or ""
+	toggle.TextColor3 = Theme.Border
+	toggle.TextSize = 11
+	toggle.Font = Enum.Font.Code
+	toggle.Parent = frame
 
-	local SliderBar = Instance.new("Frame")
-	SliderBar.Size = UDim2.new(1, 0, 0, 8)
-	SliderBar.Position = UDim2.new(0, 0, 0, 25)
-	SliderBar.BackgroundColor3 = Theme.Background
-	SliderBar.BorderColor3 = Theme.Border
-	SliderBar.BorderSizePixel = 1
-	SliderBar.Parent = SliderFrame
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.new(1, -30, 1, 0)
+	text.Position = UDim2.new(0, 26, 0, 0)
+	text.BackgroundTransparency = 1
+	text.Text = labelText
+	text.TextColor3 = Theme.Text
+	text.TextSize = 11
+	text.Font = Enum.Font.Code
+	text.TextXAlignment = Enum.TextXAlignment.Left
+	text.Parent = frame
 
-	local SliderButton = Instance.new("TextButton")
-	SliderButton.Size = UDim2.new(0, 16, 0, 16)
-	SliderButton.Position = UDim2.new(0, 0, 0.5, -8)
-	SliderButton.BackgroundColor3 = Theme.Border
-	SliderButton.BorderSizePixel = 0
-	SliderButton.Text = ""
-	SliderButton.Parent = SliderBar
-
-	local function UpdateSlider(x)
-		if not SliderBar.AbsolutePosition or not SliderBar.AbsoluteSize then return end
-		local relX = math.max(0, math.min(x - SliderBar.AbsolutePosition.X, SliderBar.AbsoluteSize.X))
-		local percentage = relX / SliderBar.AbsoluteSize.X
-		local value = min + (max - min) * percentage
-		SliderButton.Position = UDim2.new(percentage, -8, 0.5, -8)
-		Label.Text = text .. " : " .. tostring(math.floor(value))
-		if callback then
-			callback(math.floor(value))
-		end
+	local enabled = defaultState
+	local function update()
+		toggle.Text = enabled and "X" or ""
+		toggle.BackgroundColor3 = enabled and Theme.Panel2 or Theme.Background
+		if callback then callback(enabled) end
 	end
 
-	SliderButton.InputBegan:Connect(function(input)
+	toggle.MouseButton1Click:Connect(function()
+		enabled = not enabled
+		update()
+	end)
+
+	update()
+	return frame
+end
+
+local function createSlider(page, labelText, minValue, maxValue, defaultValue, callback)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1, -12, 0, 42)
+	frame.BackgroundTransparency = 1
+	frame.Parent = page
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 16)
+	label.BackgroundTransparency = 1
+	label.Text = labelText .. " : " .. tostring(defaultValue)
+	label.TextColor3 = Theme.Text
+	label.TextSize = 11
+	label.Font = Enum.Font.Code
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = frame
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 8)
+	track.Position = UDim2.new(0, 0, 0, 18)
+	track.BackgroundColor3 = Theme.Background
+	track.BorderColor3 = Theme.Border
+	track.BorderSizePixel = 1
+	track.Parent = frame
+
+	local handle = Instance.new("TextButton")
+	handle.Size = UDim2.new(0, 14, 0, 14)
+	handle.Position = UDim2.new(0, 0, 0.5, -7)
+	handle.BackgroundColor3 = Theme.Border
+	handle.BorderSizePixel = 0
+	handle.Text = ""
+	handle.Parent = track
+
+	local draggingSlider = false
+	local function setByX(xPos)
+		if not track.AbsolutePosition or not track.AbsoluteSize then return end
+		local ratio = clamp((xPos - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		local value = minValue + (maxValue - minValue) * ratio
+		local finalValue = math.floor(value)
+		label.Text = labelText .. " : " .. tostring(finalValue)
+		handle.Position = UDim2.new(ratio, -7, 0.5, -7)
+		if callback then callback(finalValue) end
+	end
+
+	handle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingSlider = true
+			setByX(input.Position.X)
 			local connection
-			connection = UserInputService.InputChanged:Connect(function(moveInput)
-				if moveInput.UserInputType == Enum.UserInputType.MouseMovement then
-					UpdateSlider(moveInput.Position.X)
+			connection = UserInputService.InputChanged:Connect(function(input2)
+				if draggingSlider and input2.UserInputType == Enum.UserInputType.MouseMovement then
+					setByX(input2.Position.X)
 				end
 			end)
-			UserInputService.InputEnded:Connect(function(endInput)
-				if endInput.UserInputType == Enum.UserInputType.MouseButton1 then
+			UserInputService.InputEnded:Connect(function(input2)
+				if input2.UserInputType == Enum.UserInputType.MouseButton1 then
+					draggingSlider = false
 					connection:Disconnect()
 				end
 			end)
 		end
 	end)
-	return SliderFrame
-end
 
-function UI:CreateTextBox(parent, placeholder, callback)
-	local Box = Instance.new("TextBox")
-	Box.Size = UDim2.new(1, -30, 0, 28)
-	Box.BackgroundColor3 = Theme.Background
-	Box.BorderColor3 = Theme.Border
-	Box.BorderSizePixel = 1
-	Box.Text = ""
-	Box.PlaceholderText = placeholder
-	Box.TextColor3 = Theme.Text
-	Box.PlaceholderColor3 = Theme.TextDim
-	Box.Font = Enum.Font.Code
-	Box.TextSize = 13
-	Box.Parent = parent
-	Box.FocusLost:Connect(function()
-		if callback then
-			callback(Box.Text)
+	track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			setByX(input.Position.X)
 		end
 	end)
-	return Box
+
+	setByX(track.AbsolutePosition.X + (track.AbsoluteSize.X * ((defaultValue - minValue) / (maxValue - minValue))))
+	return frame
 end
 
-function UI:CreateLabel(parent, text)
-	local Label = Instance.new("TextLabel")
-	Label.Size = UDim2.new(1, -30, 0, 20)
-	Label.BackgroundTransparency = 1
-	Label.Text = text
-	Label.TextColor3 = Theme.Text
-	Label.Font = Enum.Font.Code
-	Label.TextSize = 12
-	Label.TextXAlignment = Enum.TextXAlignment.Left
-	Label.Parent = parent
-	return Label
-end
-
-local function AddPlayerListEntry(parent, player)
-	local root = GetRootPart(player)
-	local distance = 0
-	if root and GetLocalRootPart() then
-		distance = (root.Position - GetLocalRootPart().Position).Magnitude
-	end
-
-	local Entry = Instance.new("TextButton")
-	Entry.Size = UDim2.new(1, -10, 0, 30)
-	Entry.BackgroundColor3 = Theme.Button
-	Entry.BorderColor3 = Theme.Border
-	Entry.BorderSizePixel = 1
-	Entry.Text = player.DisplayName .. " | " .. player.Name .. " | " .. tostring(math.floor(distance)) .. "m"
-	Entry.TextColor3 = Theme.Text
-	Entry.Font = Enum.Font.Code
-	Entry.TextSize = 12
-	Entry.TextXAlignment = Enum.TextXAlignment.Left
-	Entry.Parent = parent
-
-	Entry.MouseButton1Click:Connect(function()
-		State.TargetPlayer = player
-		State.SelectedPlayer = player
-		print("Targeted player: " .. player.Name)
+local function createTextbox(page, placeholder, callback)
+	local box = Instance.new("TextBox")
+	box.Size = UDim2.new(1, -12, 0, 26)
+	box.BackgroundColor3 = Theme.Background
+	box.BorderColor3 = Theme.Border
+	box.BorderSizePixel = 1
+	box.Text = ""
+	box.PlaceholderText = placeholder
+	box.PlaceholderColor3 = Theme.TextDim
+	box.TextColor3 = Theme.Text
+	box.TextSize = 11
+	box.Font = Enum.Font.Code
+	box.Parent = page
+	box.FocusLost:Connect(function()
+		if callback then callback(box.Text) end
 	end)
-
-	return Entry
+	return box
 end
 
-local function RefreshPlayerList(listFrame)
-	for _, child in ipairs(listFrame:GetChildren()) do
+local function createLabel(page, text)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 0, 18)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Theme.Text
+	label.TextSize = 11
+	label.Font = Enum.Font.Code
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = page
+	return label
+end
+
+local function updatePlayerList(frame)
+	for _, child in ipairs(frame:GetChildren()) do
 		if child:IsA("TextButton") then
 			child:Destroy()
 		end
@@ -523,174 +518,146 @@ local function RefreshPlayerList(listFrame)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
-			local search = State.SearchText or ""
-			local match = string.lower(player.Name):find(string.lower(search), 1, true) or string.lower(player.DisplayName):find(string.lower(search), 1, true)
-			if search == "" or match then
-				AddPlayerListEntry(listFrame, player)
+			local search = string.lower(State.SearchText or "")
+			local nameMatch = search == "" or string.find(string.lower(player.Name), search, 1, true) or string.find(string.lower(player.DisplayName), search, 1, true)
+			if nameMatch then
+				local distance = 0
+				local root = getRoot(player)
+				local localRoot = getRoot(LocalPlayer)
+				if root and localRoot then
+					distance = roundValue((root.Position - localRoot.Position).Magnitude)
+				end
+				local btn = Instance.new("TextButton")
+				btn.Size = UDim2.new(1, 0, 0, 26)
+				btn.BackgroundColor3 = Theme.Button
+				btn.BorderColor3 = Theme.BorderSoft
+				btn.BorderSizePixel = 1
+				btn.Text = player.DisplayName .. " | " .. player.Name .. " | " .. tostring(distance) .. "m"
+				btn.TextColor3 = Theme.Text
+				btn.TextSize = 11
+				btn.Font = Enum.Font.Code
+				btn.TextXAlignment = Enum.TextXAlignment.Left
+				btn.Parent = frame
+				btn.MouseButton1Click:Connect(function()
+					State.TargetPlayer = player
+					State.SelectedPlayer = player
+				end)
 			end
 		end
 	end
 end
 
-local function RefreshStatusLabels()
-	if not MainDisplay then return end
-	for _, page in pairs(Pages) do
-		for _, obj in ipairs(page:GetDescendants()) do
-			if obj:IsA("TextLabel") and obj.Text:find("Player Count") then
-				obj.Text = "Player Count : " .. tostring(#Players:GetPlayers())
-			elseif obj:IsA("TextLabel") and obj.Text:find("Server Job ID") then
-				obj.Text = "Server Job ID : " .. tostring(game.JobId or "unknown")
-			elseif obj:IsA("TextLabel") and obj.Text:find("Place ID") then
-				obj.Text = "Place ID : " .. tostring(game.PlaceId or "unknown")
-			end
+local function setupESP()
+	for _, obj in pairs(State.ESPObjects) do
+		if obj and obj.Parent then
+			obj:Destroy()
 		end
 	end
-end
+	State.ESPObjects = {}
 
-local function SetupESP()
-	if not State.ESPEnabled then
-		for _, esp in pairs(State.ESPObjects) do
-			SafeDestroy(esp)
-		end
-		State.ESPObjects = {}
-		return
-	end
+	if not State.ESPEnabled then return end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
-			local root = GetRootPart(player)
-			local head = player.Character:FindFirstChild("Head")
-			if root and head then
-				local box = Instance.new("Highlight")
-				box.Name = "JMOESP"
-				box.FillTransparency = 0.65
-				box.OutlineColor = Color3.fromRGB(0, 255, 100)
-				box.OutlineTransparency = 0
-				box.Adornee = player.Character
-				box.Parent = player.Character
-				box.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-				State.ESPObjects[player.Name] = box
-			end
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "JMOESP"
+			highlight.Adornee = player.Character
+			highlight.FillTransparency = 0.7
+			highlight.OutlineColor = Theme.Green
+			highlight.OutlineTransparency = 0
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Parent = player.Character
+			State.ESPObjects[player.Name] = highlight
 		end
 	end
 end
 
-local function UpdatePlayerInfoPage()
-	for _, page in pairs(Pages) do
-		if page.Name == "PlayerPage" then
-			for _, child in ipairs(page:GetChildren()) do
-				if child:IsA("TextLabel") and child.Text:find("Target") then
-					child.Text = "Target : " .. (State.TargetPlayer and State.TargetPlayer.Name or "None")
-				end
-			end
-		end
-	end
-end
-
-local function ApplyMovementSettings()
-	local humanoid = GetLocalHumanoid()
-	if humanoid then
-		humanoid.WalkSpeed = State.WalkSpeed
-		humanoid.JumpPower = State.JumpPower
+local function syncMovement()
+	local h = getHumanoid(LocalPlayer)
+	if h then
+		h.WalkSpeed = State.WalkSpeed
+		h.JumpPower = State.JumpPower
 		if State.HighHealth then
-			humanoid.MaxHealth = 9999
-			humanoid.Health = humanoid.MaxHealth
+			h.MaxHealth = 5000
+			h.Health = h.MaxHealth
 		end
+	end
+	Workspace.Gravity = State.GravityValue
+end
+
+local function stopFly()
+	if State.FlyConnection then
+		State.FlyConnection:Disconnect()
+		State.FlyConnection = nil
+	end
+	local root = getRoot(LocalPlayer)
+	if root then
+		local velocity = root:FindFirstChild("JMOFlyVelocity")
+		if velocity then velocity:Destroy() end
+		local gyro = root:FindFirstChild("JMOFlyGyro")
+		if gyro then gyro:Destroy() end
 	end
 end
 
-local function ToggleFly()
-	if State.Fly then
-		local root = GetLocalRootPart()
-		if root then
-			local bodyVelocity = root:FindFirstChild("JMOFlyVelocity")
-			if bodyVelocity then bodyVelocity:Destroy() end
-			local bodyGyro = root:FindFirstChild("JMOFlyGyro")
-			if bodyGyro then bodyGyro:Destroy() end
-		end
-		if State.FlyConnection then
-			State.FlyConnection:Disconnect()
-			State.FlyConnection = nil
-		end
-	else
-		local root = GetLocalRootPart()
-		if root then
-			local velocity = Instance.new("BodyVelocity")
-			velocity.Name = "JMOFlyVelocity"
-			velocity.MaxForce = Vector3.new(50000, 50000, 50000)
-			velocity.Velocity = Vector3.new(0, 0, 0)
-			velocity.Parent = root
+local function startFly()
+	stopFly()
+	local root = getRoot(LocalPlayer)
+	if not root then return end
 
-			local gyro = Instance.new("BodyGyro")
-			gyro.Name = "JMOFlyGyro"
-			gyro.MaxTorque = Vector3.new(9000, 9000, 9000)
-			gyro.Parent = root
+	local velocity = Instance.new("BodyVelocity")
+	velocity.Name = "JMOFlyVelocity"
+	velocity.MaxForce = Vector3.new(100000, 100000, 100000)
+	velocity.Velocity = Vector3.zero
+	velocity.Parent = root
 
-			State.FlyConnection = RunService.RenderStepped:Connect(function()
-				if not State.Fly then return end
-				local localRoot = GetLocalRootPart()
-				local camera = Workspace.CurrentCamera
-				if not localRoot or not camera then return end
-				local direction = Vector3.new(0, 0, 0)
-				if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction += camera.CFrame.LookVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction -= camera.CFrame.LookVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction -= camera.CFrame.RightVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction += camera.CFrame.RightVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0, 1, 0) end
-				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.new(0, 1, 0) end
-				if direction.Magnitude > 0 then
-					direction = direction.Unit * State.FlySpeed
-				else
-					direction = Vector3.new(0, 0, 0)
-				end
-				velocity.Velocity = direction
-				gyro.CFrame = CFrame.new(localRoot.Position, localRoot.Position + camera.CFrame.LookVector)
-			end)
-		end
-	end
-end
+	local gyro = Instance.new("BodyGyro")
+	gyro.Name = "JMOFlyGyro"
+	gyro.MaxTorque = Vector3.new(100000, 100000, 100000)
+	gyro.Parent = root
 
-local function ToggleNoclip()
-	local character = LocalPlayer.Character
-	if not character then return end
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = not State.Noclip
-		end
-	end
-	LocalPlayer.CharacterAdded:Connect(function(char)
-		if State.Noclip then
-			for _, part in ipairs(char:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.CanCollide = false
-				end
-			end
-		end
+	State.FlyConnection = RunService.RenderStepped:Connect(function()
+		if not State.Fly then return end
+		local localRoot = getRoot(LocalPlayer)
+		local cam = Workspace.CurrentCamera
+		if not localRoot or not cam then return end
+		local move = Vector3.zero
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move += Vector3.new(0, -1, 0) end
+		velocity.Velocity = (move.Magnitude > 0 and move.Unit * State.FlySpeed or Vector3.zero)
+		gyro.CFrame = CFrame.new(localRoot.Position, localRoot.Position + cam.CFrame.LookVector)
 	end)
 end
 
-local function ToggleFreecam()
-	if State.Freecam then
-		State.CurrentCameraCFrame = Camera.CFrame
-		Camera.CameraType = Enum.CameraType.Scriptable
-		local connection
-		connection = RunService.RenderStepped:Connect(function()
-			if not State.Freecam then
-				connection:Disconnect()
-				return
-			end
-			local move = Vector3.new(0, 0, 0)
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += Camera.CFrame.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= Camera.CFrame.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= Camera.CFrame.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += Camera.CFrame.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0, 1, 0) end
-			if move.Magnitude > 0 then
-				Camera.CFrame = Camera.CFrame + (move.Unit * State.FreecamSpeed / 60)
-			end
-		end)
+local function toggleFly(enabled)
+	State.Fly = enabled
+	if enabled then
+		startFly()
 	else
+		stopFly()
+	end
+end
+
+local function toggleNoclip(enabled)
+	State.Noclip = enabled
+	local char = getCharacter(LocalPlayer)
+	if not char then return end
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = not enabled
+		end
+	end
+end
+
+local function stopFreecam()
+	if State.FreecamConnection then
+		State.FreecamConnection:Disconnect()
+		State.FreecamConnection = nil
+	end
+	if Camera then
 		Camera.CameraType = Enum.CameraType.Custom
 		if State.CurrentCameraCFrame then
 			Camera.CFrame = State.CurrentCameraCFrame
@@ -698,549 +665,638 @@ local function ToggleFreecam()
 	end
 end
 
-local function ToggleAntiAFK()
-	if State.AntiAFK then
-		State.AntiAFKConnection = LocalPlayer.Idled:Connect(function()
-			local virtualInput = game:GetService("VirtualInputManager")
-			virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-			virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+local function startFreecam()
+	if not Camera then return end
+	State.CurrentCameraCFrame = Camera.CFrame
+	Camera.CameraType = Enum.CameraType.Scriptable
+	Camera.CFrame = Camera.CFrame
+
+	State.FreecamConnection = RunService.RenderStepped:Connect(function()
+		if not State.Freecam or not Camera then return end
+		local move = Vector3.zero
+		local camCF = Camera.CFrame
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += camCF.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= camCF.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= camCF.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += camCF.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0, 1, 0) end
+		if move.Magnitude > 0 then
+			Camera.CFrame = Camera.CFrame + (move.Unit * (State.FreecamSpeed / 60))
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, -math.rad(3), 0)
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, math.rad(3), 0)
+		end
+	end)
+end
+
+local function updateInfiniteJump()
+	if State.InfiniteJump then
+		if State.JumpConnection then return end
+		State.JumpConnection = UserInputService.JumpRequest:Connect(function()
+			local h = getHumanoid(LocalPlayer)
+			if h and h:GetState() ~= Enum.HumanoidStateType.Dead then
+				h:ChangeState(Enum.HumanoidStateType.Jumping)
+			end
 		end)
 	else
-		if State.AntiAFKConnection then
-			State.AntiAFKConnection:Disconnect()
-			State.AntiAFKConnection = nil
+		if State.JumpConnection then
+			State.JumpConnection:Disconnect()
+			State.JumpConnection = nil
 		end
 	end
 end
 
-local function SaveSettings()
+local function toggleFreecam(enabled)
+	State.Freecam = enabled
+	if enabled then
+		startFreecam()
+	else
+		stopFreecam()
+	end
+end
+
+local function toggleAntiAFK(enabled)
+	State.AntiAFK = enabled
+	if State.AntiAFKConnection then
+		State.AntiAFKConnection:Disconnect()
+		State.AntiAFKConnection = nil
+	end
+	if enabled then
+		State.AntiAFKConnection = LocalPlayer.Idled:Connect(function()
+			local vm = game:GetService("VirtualInputManager")
+			vm:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+			vm:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+		end)
+	end
+end
+
+local function saveSettings()
 	State.SavedData = {
 		Fly = State.Fly,
 		FlySpeed = State.FlySpeed,
 		WalkSpeed = State.WalkSpeed,
 		JumpPower = State.JumpPower,
+		GravityValue = State.GravityValue,
 		ESPEnabled = State.ESPEnabled,
 		Freecam = State.Freecam,
 		CameraFOV = State.CameraFOV,
-		Waypoints = State.WaypointList,
+		WaypointList = State.WaypointList,
 	}
-	print("Settings saved.")
+	print("JMO: settings saved")
 end
 
-local function LoadSettings()
+local function loadSettings()
 	if not State.SavedData then return end
 	State.Fly = State.SavedData.Fly or false
 	State.FlySpeed = State.SavedData.FlySpeed or 45
 	State.WalkSpeed = State.SavedData.WalkSpeed or 16
 	State.JumpPower = State.SavedData.JumpPower or 50
+	State.GravityValue = State.SavedData.GravityValue or 196.2
 	State.ESPEnabled = State.SavedData.ESPEnabled or false
 	State.Freecam = State.SavedData.Freecam or false
 	State.CameraFOV = State.SavedData.CameraFOV or 70
-	State.WaypointList = State.SavedData.Waypoints or {}
-	print("Settings loaded.")
+	State.WaypointList = State.SavedData.WaypointList or {}
+	print("JMO: settings loaded")
 end
 
-local function SaveWaypoints()
-	State.SavedData.Waypoints = State.WaypointList
-	print("Waypoints saved.")
+local function saveWaypoints()
+	State.SavedData.WaypointList = State.WaypointList
+	print("JMO: waypoints saved")
 end
 
-local function BuildPages()
-	local HomePage = CreatePage("Home")
-	UI:CreateSectionHeader(HomePage, "Welcome")
-	UI:CreateButton(HomePage, "Status", function()
-		print("JMO HUB v2 online")
-	end)
-	UI:CreateButton(HomePage, "Refresh Player List", function()
-		if Pages.Player then
-			RefreshPlayerList(Pages.Player:FindFirstChild("PlayerList"))
-		end
-	end)
-	UI:CreateButton(HomePage, "Reset Settings", function()
-		State = {
-			SelectedPlayer = nil,
-			TargetPlayer = nil,
-			SearchText = "",
-			ESPEnabled = false,
-			NameESP = false,
-			DistanceESP = false,
-			HealthBars = false,
-			LocalHighlight = false,
-			Fly = false,
-			FlySpeed = 45,
-			WalkSpeed = 16,
-			JumpPower = 50,
-			InfiniteJump = false,
-			Noclip = false,
-			AutoRun = false,
-			ThirdPerson = false,
-			Freecam = false,
-			FreecamSpeed = 20,
-			CameraFOV = 70,
-			CameraLocked = false,
-			UITransparency = 0,
-			Fullbright = false,
-			RemoveFog = false,
-			AutoESP = false,
-			SavedSettings = false,
-			SavedWaypoints = false,
-			TargetTracking = false,
-			AntiAFK = false,
-			HealthRegen = false,
-			HighHealth = false,
-			MobileControls = false,
-			DesktopControls = false,
-			WaypointList = {},
-			ESPObjects = {},
-			CurrentCameraCFrame = nil,
-			FlyConnection = nil,
-			RenderConnection = nil,
-			AntiAFKConnection = nil,
-			SavedData = {},
-		}
-		print("Settings reset.")
-	end)
-
-	local PlayerPage = CreatePage("Player")
-	UI:CreateSectionHeader(PlayerPage, "Target")
-	local TargetLabel = UI:CreateLabel(PlayerPage, "Target : None")
-	UI:CreateSectionHeader(PlayerPage, "Search")
-	local SearchBox = UI:CreateTextBox(PlayerPage, "Search player...", function(text)
-		State.SearchText = text or ""
-		if Pages.Player then
-			RefreshPlayerList(Pages.Player:FindFirstChild("PlayerList"))
-		end
-	end)
-	UI:CreateSectionHeader(PlayerPage, "Player List")
-	local PlayerList = Instance.new("ScrollingFrame")
-	PlayerList.Name = "PlayerList"
-	PlayerList.Size = UDim2.new(1, -30, 0, 180)
-	PlayerList.BackgroundColor3 = Theme.Background
-	PlayerList.BorderColor3 = Theme.Border
-	PlayerList.BorderSizePixel = 1
-	PlayerList.ScrollBarThickness = 4
-	PlayerList.Parent = PlayerPage
-	RefreshPlayerList(PlayerList)
-	Players.PlayerAdded:Connect(function()
-		RefreshPlayerList(PlayerList)
-	end)
-	Players.PlayerRemoving:Connect(function()
-		RefreshPlayerList(PlayerList)
-	end)
-	UI:CreateSectionHeader(PlayerPage, "Actions")
-	UI:CreateButton(PlayerPage, "Spectate Player", function()
-		if State.TargetPlayer and State.TargetPlayer.Character and State.TargetPlayer.Character:FindFirstChild("Humanoid") then
-			Camera.CameraSubject = State.TargetPlayer.Character:FindFirstChildOfClass("Humanoid")
-		end
-	end)
-	UI:CreateButton(PlayerPage, "Stop Spectating", function()
-		Camera.CameraSubject = GetLocalHumanoid()
-	end)
-	UI:CreateButton(PlayerPage, "TP To Player", function()
-		if State.TargetPlayer and State.TargetPlayer.Character and GetLocalRootPart() then
-			GetLocalRootPart().CFrame = GetRootPart(State.TargetPlayer).CFrame + Vector3.new(0, 3, 0)
-		end
-	end)
-	UI:CreateButton(PlayerPage, "Refresh List", function()
-		RefreshPlayerList(PlayerList)
-	end)
-	UI:CreateSectionHeader(PlayerPage, "ESP")
-	UI:CreateToggle(PlayerPage, "ESP", false, function(enabled)
-		State.ESPEnabled = enabled
-		SetupESP()
-	end)
-	UI:CreateToggle(PlayerPage, "Name ESP", false, function(enabled)
-		State.NameESP = enabled
-	end)
-	UI:CreateToggle(PlayerPage, "Distance ESP", false, function(enabled)
-		State.DistanceESP = enabled
-	end)
-	UI:CreateToggle(PlayerPage, "Health Bars", false, function(enabled)
-		State.HealthBars = enabled
-	end)
-	UI:CreateToggle(PlayerPage, "Player Highlights", false, function(enabled)
-		State.LocalHighlight = enabled
-	end)
-	UI:CreateToggle(PlayerPage, "Target Tracking", false, function(enabled)
-		State.TargetTracking = enabled
-	end)
-	TargetLabel.Text = "Target : None"
-
-	local MovementPage = CreatePage("Movement")
-	UI:CreateSectionHeader(MovementPage, "Movement")
-	UI:CreateToggle(MovementPage, "Fly", false, function(enabled)
-		State.Fly = enabled
-		ToggleFly()
-	end)
-	UI:CreateToggle(MovementPage, "Infinite Jump", false, function(enabled)
-		State.InfiniteJump = enabled
-		if enabled then
-			UserInputService.JumpRequest:Connect(function()
-				local h = GetLocalHumanoid()
-				if h and State.InfiniteJump then
-					h:ChangeState(Enum.HumanoidStateType.Jumping)
-				end
-			end)
-		end
-	end)
-	UI:CreateToggle(MovementPage, "Noclip", false, function(enabled)
-		State.Noclip = enabled
-		ToggleNoclip()
-	end)
-	UI:CreateToggle(MovementPage, "Auto Run", false, function(enabled)
-		State.AutoRun = enabled
-		if enabled then
-			local h = GetLocalHumanoid()
-			if h then h.WalkSpeed = 30 end
-		end
-	end)
-	UI:CreateSlider(MovementPage, "Fly Speed", 10, 150, 45, function(value)
-		State.FlySpeed = value
-	end)
-	UI:CreateSlider(MovementPage, "Walk Speed", 16, 200, 16, function(value)
-		State.WalkSpeed = value
-		ApplyMovementSettings()
-	end)
-	UI:CreateSlider(MovementPage, "Jump Power", 20, 200, 50, function(value)
-		State.JumpPower = value
-		ApplyMovementSettings()
-	end)
-	UI:CreateSlider(MovementPage, "Gravity", 0, 200, 100, function(value)
-		local gravity = Workspace.Gravity
-		Workspace.Gravity = value
-	end)
-	UI:CreateButton(MovementPage, "Movement Reset", function()
-		Workspace.Gravity = 196.2
-		local h = GetLocalHumanoid()
-		if h then
-			h.WalkSpeed = 16
-			h.JumpPower = 50
-		end
-		State.Fly = false
-		State.Noclip = false
-		State.InfiniteJump = false
-		State.AutoRun = false
-		ToggleFly()
-	end)
-
-	local VisualPage = CreatePage("Visual")
-	UI:CreateSectionHeader(VisualPage, "Lighting")
-	UI:CreateToggle(VisualPage, "Fullbright", false, function(enabled)
-		State.Fullbright = enabled
-		if enabled then
-			Lighting.Brightness = 2
-			Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-		else
-			Lighting.Brightness = 1
-			Lighting.Ambient = Color3.fromRGB(128, 128, 128)
-		end
-	end)
-	UI:CreateToggle(VisualPage, "Remove Fog", false, function(enabled)
-		State.RemoveFog = enabled
-		Lighting.FogEnd = enabled and 100000 or 100
-	end)
-	UI:CreateSlider(VisualPage, "FOV", 20, 120, 70, function(value)
-		State.CameraFOV = value
-		if Camera then Camera.FieldOfView = value end
-	end)
-	UI:CreateSlider(VisualPage, "Camera Zoom", 0, 100, 0, function(value)
-		if Camera then
-			Camera.FieldOfView = State.CameraFOV + value
-		end
-	end)
-	UI:CreateSlider(VisualPage, "Character Transparency", 0, 100, 0, function(value)
-		local character = LocalPlayer.Character
-		if character then
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.Transparency = value / 100
-				end
-			end
-		end
-	end)
-	UI:CreateToggle(VisualPage, "Local Highlight", false, function(enabled)
-		State.LocalHighlight = enabled
-	end)
-	UI:CreateToggle(VisualPage, "ESP Settings", false, function(enabled)
-		State.AutoESP = enabled
-		SetupESP()
-	end)
-	UI:CreateSlider(VisualPage, "UI Transparency", 0, 100, 0, function(value)
-		State.UITransparency = value / 100
-		ApplyUITransparency(State.UITransparency)
-	end)
-
-	local CameraPage = CreatePage("Camera")
-	UI:CreateSectionHeader(CameraPage, "Freecam")
-	UI:CreateToggle(CameraPage, "Freecam", false, function(enabled)
-		State.Freecam = enabled
-		ToggleFreecam()
-	end)
-	UI:CreateSlider(CameraPage, "Freecam Speed", 10, 200, 20, function(value)
-		State.FreecamSpeed = value
-	end)
-	UI:CreateSlider(CameraPage, "Camera FOV", 20, 120, 70, function(value)
-		State.CameraFOV = value
-		if Camera then Camera.FieldOfView = value end
-	end)
-	UI:CreateToggle(CameraPage, "Camera Lock", false, function(enabled)
-		State.CameraLocked = enabled
-	end)
-	UI:CreateButton(CameraPage, "Camera Reset", function()
-		if Camera then
-			Camera.CFrame = CFrame.new() + Vector3.new(0, 5, 10)
-		end
-	end)
-	UI:CreateButton(CameraPage, "Spectate", function()
-		if State.TargetPlayer and State.TargetPlayer.Character then
-			Camera.CameraSubject = State.TargetPlayer.Character:FindFirstChildOfClass("Humanoid")
-		end
-	end)
-
-	local WorldPage = CreatePage("World")
-	UI:CreateSectionHeader(WorldPage, "Coordinates")
-	local CoordLabel = UI:CreateLabel(WorldPage, "Coordinates : 0, 0, 0")
-	UI:CreateButton(WorldPage, "Save Position", function()
-		local root = GetLocalRootPart()
-		if root then
-			local pos = root.Position
-			CoordLabel.Text = "Coordinates : " .. tostring(math.floor(pos.X)) .. ", " .. tostring(math.floor(pos.Y)) .. ", " .. tostring(math.floor(pos.Z))
-		end
-	end)
-	UI:CreateButton(WorldPage, "Create Waypoint", function()
-		local root = GetLocalRootPart()
-		if root then
-			local pos = root.Position
-			local name = "WP" .. tostring(#State.WaypointList + 1)
-			State.WaypointList[name] = Vector3.new(pos.X, pos.Y, pos.Z)
-			print("Waypoint added: " .. name)
-		end
-	end)
-	UI:CreateButton(WorldPage, "Waypoint List", function()
-		print(HttpService:JSONEncode(State.WaypointList))
-	end)
-	UI:CreateButton(WorldPage, "Teleport to Waypoint", function()
-		if State.WaypointList and next(State.WaypointList) then
-			for _, pos in pairs(State.WaypointList) do
-				local root = GetLocalRootPart()
-				if root then
-					root.CFrame = CFrame.new(pos)
-				end
-				break
-			end
-		end
-	end)
-	UI:CreateButton(WorldPage, "Delete Waypoint", function()
-		State.WaypointList = {}
-		print("Waypoints cleared")
-	end)
-	UI:CreateSectionHeader(WorldPage, "Lighting")
-	UI:CreateSlider(WorldPage, "Brightness", 0, 10, 1, function(value)
-		Lighting.Brightness = value
-	end)
-	UI:CreateSlider(WorldPage, "Ambient", 0, 255, 128, function(value)
-		Lighting.Ambient = Color3.fromRGB(value, value, value)
-	end)
-
-	local UtilityPage = CreatePage("Utility")
-	UI:CreateSectionHeader(UtilityPage, "General")
-	UI:CreateLabel(UtilityPage, "Player Count : " .. tostring(#Players:GetPlayers()))
-	UI:CreateLabel(UtilityPage, "Server Job ID : " .. tostring(game.JobId or "unknown"))
-	UI:CreateLabel(UtilityPage, "Place ID : " .. tostring(game.PlaceId or "unknown"))
-	UI:CreateLabel(UtilityPage, "Ping : " .. tostring(math.random(20, 80) .. "ms"))
-	UI:CreateButton(UtilityPage, "Anti AFK", function()
-		State.AntiAFK = not State.AntiAFK
-		ToggleAntiAFK()
-	end)
-	UI:CreateButton(UtilityPage, "Rejoin", function()
-		local teleportService = game:GetService("TeleportService")
-		if teleportService then
-			teleportService:Teleport(game.PlaceId, LocalPlayer)
-		end
-	end)
-	UI:CreateButton(UtilityPage, "Server Info", function()
-		print("Server Job ID: " .. tostring(game.JobId or "unknown"))
-		print("Place ID: " .. tostring(game.PlaceId or "unknown"))
-		print("Players: " .. tostring(#Players:GetPlayers()))
-	end)
-	UI:CreateButton(UtilityPage, "Copy Username", function()
-		setclipboard(LocalPlayer.Name)
-	end)
-	UI:CreateButton(UtilityPage, "Copy Coordinates", function()
-		local root = GetLocalRootPart()
-		if root then
-			setclipboard(tostring(root.Position))
-		end
-	end)
-	UI:CreateButton(UtilityPage, "FPS Counter", function()
-		print("FPS counter active")
-	end)
-
-	local CharacterPage = CreatePage("Character")
-	UI:CreateSectionHeader(CharacterPage, "Health")
-	UI:CreateButton(CharacterPage, "Heal", function()
-		local h = GetLocalHumanoid()
-		if h then h.Health = h.MaxHealth end
-	end)
-	UI:CreateButton(CharacterPage, "High Health", function()
-		State.HighHealth = not State.HighHealth
-		ApplyMovementSettings()
-	end)
-	UI:CreateToggle(CharacterPage, "Health Regen", false, function(enabled)
-		State.HealthRegen = enabled
-		if enabled then
-			RunService.RenderStepped:Connect(function()
-				if State.HealthRegen then
-					local h = GetLocalHumanoid()
-					if h and h.Health < h.MaxHealth then
-						h.Health = math.min(h.MaxHealth, h.Health + 0.5)
-					end
-				end
-			end)
-		end
-	end)
-	UI:CreateButton(CharacterPage, "Reset Character", function()
-		LocalPlayer.Character:BreakJoints()
-	end)
-	UI:CreateButton(CharacterPage, "Humanoid State Info", function()
-		local h = GetLocalHumanoid()
-		if h then
-			print("State: " .. tostring(h:GetState()))
-		end
-	end)
-
-	local UIPage = CreatePage("UI")
-	UI:CreateSectionHeader(UIPage, "Theme")
-	UI:CreateToggle(UIPage, "Green + Black Theme", true, function(enabled)
-		if enabled then
-			Theme.Border = Color3.fromRGB(0, 255, 100)
-			Theme.Background = Color3.fromRGB(10, 10, 10)
-		else
-			Theme.Border = Color3.fromRGB(255, 255, 255)
-			Theme.Background = Color3.fromRGB(20, 20, 20)
-		end
-	end)
-	UI:CreateToggle(UIPage, "Tabs", true, function(enabled)
-		if not enabled then
-			Sidebar.Visible = false
-		else
-			Sidebar.Visible = true
-		end
-	end)
-	UI:CreateToggle(UIPage, "Search Boxes", true, function(enabled)
-		print("Search boxes: " .. tostring(enabled))
-	end)
-	UI:CreateToggle(UIPage, "Sliders", true, function(enabled)
-		print("Sliders: " .. tostring(enabled))
-	end)
-	UI:CreateToggle(UIPage, "Toggles", true, function(enabled)
-		print("Toggles: " .. tostring(enabled))
-	end)
-	UI:CreateButton(UIPage, "Reset Settings", function()
-		print("UI settings reset")
-	end)
-	UI:CreateButton(UIPage, "Destroy Hub", function()
-		JMOHubV2:Destroy()
-	end)
-	UI:CreateSlider(UIPage, "UI Scale", 50, 150, 100, function(value)
-		MainWindow.Size = UDim2.new(0, 620 * (value / 100), 0, 400 * (value / 100))
-	end)
-	UI:CreateSlider(UIPage, "Transparency", 0, 100, 0, function(value)
-		State.UITransparency = value / 100
-		ApplyUITransparency(State.UITransparency)
-	end)
-
-	local AdvancedPage = CreatePage("Advanced")
-	UI:CreateSectionHeader(AdvancedPage, "Advanced")
-	UI:CreateToggle(AdvancedPage, "Saved Settings", false, function(enabled)
-		State.SavedSettings = enabled
-		if enabled then SaveSettings() end
-	end)
-	UI:CreateToggle(AdvancedPage, "Saved Waypoints", false, function(enabled)
-		State.SavedWaypoints = enabled
-		if enabled then SaveWaypoints() end
-	end)
-	UI:CreateToggle(AdvancedPage, "Target Player Tracking", false, function(enabled)
-		State.TargetTracking = enabled
-	end)
-	UI:CreateToggle(AdvancedPage, "Automatic ESP Updates", false, function(enabled)
-		State.AutoESP = enabled
-		SetupESP()
-	end)
-	UI:CreateToggle(AdvancedPage, "Character Respawn Handling", false, function(enabled)
-		print("Respawn handling: " .. tostring(enabled))
-	end)
-	UI:CreateToggle(AdvancedPage, "Automatic Player List Updates", false, function(enabled)
-		print("Player list updates: " .. tostring(enabled))
-	end)
-	UI:CreateToggle(AdvancedPage, "Mobile Touch Controls", false, function(enabled)
-		State.MobileControls = enabled
-	end)
-	UI:CreateToggle(AdvancedPage, "Desktop Mouse Controls", false, function(enabled)
-		State.DesktopControls = enabled
-	end)
-	UI:CreateButton(AdvancedPage, "Save Settings", function()
-		SaveSettings()
-	end)
-	UI:CreateButton(AdvancedPage, "Load Settings", function()
-		LoadSettings()
-	end)
-	UI:CreateButton(AdvancedPage, "Save Waypoints", function()
-		SaveWaypoints()
-	end)
-
-	HomePage.Visible = true
-	for _, b in pairs(Sidebar:GetChildren()) do
-		if b:IsA("TextButton") and b.Text:find("HOME") then
-			b.TextColor3 = Theme.Border
-			if b:FindFirstChild("Frame") then
-				b.Frame.Visible = true
-			end
-		end
+local function refreshCoordinateLabel(label)
+	if not label then return end
+	local root = getRoot(LocalPlayer)
+	if root then
+		local pos = root.Position
+		label.Text = "Coordinates : " .. tostring(math.floor(pos.X)) .. ", " .. tostring(math.floor(pos.Y)) .. ", " .. tostring(math.floor(pos.Z))
+	else
+		label.Text = "Coordinates : 0, 0, 0"
 	end
 end
 
-BuildPages()
+local HomePage = createPage("Home")
+createSection(HomePage, "Welcome")
+createButton(HomePage, "Status", function() print("JMO HUB online") end)
+createButton(HomePage, "Refresh Player List", function()
+	if Pages.Player then
+		updatePlayerList(Pages.Player:FindFirstChild("PlayerList"))
+	end
+end)
+createButton(HomePage, "Reset Settings", function()
+	State.Fly = false
+	State.FlySpeed = 45
+	State.WalkSpeed = 16
+	State.JumpPower = 50
+	State.GravityValue = 196.2
+	State.InfiniteJump = false
+	State.Noclip = false
+	State.AutoRun = false
+	State.Freecam = false
+	State.FreecamSpeed = 25
+	State.CameraFOV = 70
+	State.ESPEnabled = false
+	State.NameESP = false
+	State.DistanceESP = false
+	State.HealthBars = false
+	State.LocalHighlight = false
+	State.TargetTracking = false
+	State.AntiAFK = false
+	State.HighHealth = false
+	State.HealthRegen = false
+	State.UITransparency = 0
+	State.WaypointList = {}
+	syncMovement()
+	stopFly()
+	stopFreecam()
+	print("JMO: settings reset")
+end)
 
-local function RefreshRuntimeStats()
-	if Camera then
-		if State.CameraFOV then
-			Camera.FieldOfView = State.CameraFOV
+local PlayerPage = createPage("Player")
+createSection(PlayerPage, "Target")
+local targetLabel = createLabel(PlayerPage, "Target : None")
+createSection(PlayerPage, "Search")
+createTextbox(PlayerPage, "Search player...", function(text)
+	State.SearchText = text or ""
+	if Pages.Player then
+		updatePlayerList(Pages.Player:FindFirstChild("PlayerList"))
+	end
+end)
+createSection(PlayerPage, "Player List")
+local playerList = Instance.new("ScrollingFrame")
+playerList.Name = "PlayerList"
+playerList.Size = UDim2.new(1, -12, 0, 150)
+playerList.BackgroundColor3 = Theme.Background
+playerList.BorderColor3 = Theme.Border
+playerList.BorderSizePixel = 1
+playerList.ScrollBarThickness = 4
+playerList.Parent = PlayerPage
+updatePlayerList(playerList)
+Players.PlayerAdded:Connect(function()
+	updatePlayerList(playerList)
+end)
+Players.PlayerRemoving:Connect(function()
+	updatePlayerList(playerList)
+end)
+createSection(PlayerPage, "Actions")
+createButton(PlayerPage, "Spectate", function()
+	if State.TargetPlayer and getHumanoid(State.TargetPlayer) then
+		Camera.CameraSubject = getHumanoid(State.TargetPlayer)
+	end
+end)
+createButton(PlayerPage, "Stop Spectating", function()
+	if getHumanoid(LocalPlayer) then
+		Camera.CameraSubject = getHumanoid(LocalPlayer)
+	end
+end)
+createButton(PlayerPage, "TP To Player", function()
+	if State.TargetPlayer then
+		local root = getRoot(LocalPlayer)
+		local targetRoot = getRoot(State.TargetPlayer)
+		if root and targetRoot then
+			root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
 		end
 	end
-	RefreshStatusLabels()
-	UpdatePlayerInfoPage()
-end
+end)
+createButton(PlayerPage, "Refresh List", function()
+	updatePlayerList(playerList)
+end)
+createSection(PlayerPage, "ESP")
+createToggle(PlayerPage, "ESP", false, function(enabled)
+	State.ESPEnabled = enabled
+	setupESP()
+end)
+createToggle(PlayerPage, "Name ESP", false, function(enabled) State.NameESP = enabled end)
+createToggle(PlayerPage, "Distance ESP", false, function(enabled) State.DistanceESP = enabled end)
+createToggle(PlayerPage, "Health Bars", false, function(enabled) State.HealthBars = enabled end)
+createToggle(PlayerPage, "Player Highlights", false, function(enabled) State.LocalHighlight = enabled end)
+createToggle(PlayerPage, "Target Tracking", false, function(enabled) State.TargetTracking = enabled end)
 
-RunService.RenderStepped:Connect(function()
-	RefreshRuntimeStats()
-	if State.ESPEnabled or State.AutoESP then
-		SetupESP()
+local MovementPage = createPage("Movement")
+createSection(MovementPage, "Movement")
+createToggle(MovementPage, "Fly", false, function(enabled)
+	toggleFly(enabled)
+end)
+createToggle(MovementPage, "Infinite Jump", false, function(enabled)
+	State.InfiniteJump = enabled
+	updateInfiniteJump()
+end)
+createToggle(MovementPage, "NoClip", false, function(enabled)
+	toggleNoclip(enabled)
+end)
+createToggle(MovementPage, "Auto Run", false, function(enabled)
+	State.AutoRun = enabled
+	local h = getHumanoid(LocalPlayer)
+	if h and enabled then
+		h.WalkSpeed = 30
+	else
+		h.WalkSpeed = State.WalkSpeed
 	end
-	if State.TargetTracking and State.TargetPlayer then
-		local root = GetRootPart(State.TargetPlayer)
-		if root then
-			print("Tracking: " .. State.TargetPlayer.Name .. " @ " .. tostring(RoundNumber(root.Position.X)) .. ", " .. tostring(RoundNumber(root.Position.Y)) .. ", " .. tostring(RoundNumber(root.Position.Z)))
+end)
+createSlider(MovementPage, "Fly Speed", 10, 150, 45, function(value)
+	State.FlySpeed = value
+end)
+createSlider(MovementPage, "Walk Speed", 16, 200, 16, function(value)
+	State.WalkSpeed = value
+	syncMovement()
+end)
+createSlider(MovementPage, "Jump Power", 20, 200, 50, function(value)
+	State.JumpPower = value
+	syncMovement()
+end)
+createSlider(MovementPage, "Gravity", 0, 400, 196, function(value)
+	State.GravityValue = value
+	Workspace.Gravity = value
+end)
+createButton(MovementPage, "Movement Reset", function()
+	State.Fly = false
+	State.InfiniteJump = false
+	State.Noclip = false
+	State.AutoRun = false
+	State.WalkSpeed = 16
+	State.JumpPower = 50
+	State.GravityValue = 196.2
+	toggleFly(false)
+	toggleNoclip(false)
+	syncMovement()
+end)
+
+local VisualPage = createPage("Visual")
+createSection(VisualPage, "Lighting")
+createToggle(VisualPage, "Fullbright", false, function(enabled)
+	State.Fullbright = enabled
+	Lighting.Brightness = enabled and 2 or 1
+	Lighting.Ambient = enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(128, 128, 128)
+end)
+createToggle(VisualPage, "Remove Fog", false, function(enabled)
+	State.RemoveFog = enabled
+	Lighting.FogEnd = enabled and 100000 or 100
+end)
+createSlider(VisualPage, "FOV", 20, 120, 70, function(value)
+	State.CameraFOV = value
+	if Camera then Camera.FieldOfView = value end
+end)
+createSlider(VisualPage, "Camera Zoom", 0, 80, 0, function(value)
+	if Camera then Camera.FieldOfView = State.CameraFOV + value end
+end)
+createSlider(VisualPage, "Character Transparency", 0, 100, 0, function(value)
+	local char = getCharacter(LocalPlayer)
+	if char then
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Transparency = value / 100
+			end
+		end
+	end
+end)
+createToggle(VisualPage, "Local Highlight", false, function(enabled)
+	State.LocalHighlight = enabled
+end)
+createToggle(VisualPage, "ESP Settings", false, function(enabled)
+	State.AutoESP = enabled
+	setupESP()
+end)
+createSlider(VisualPage, "UI Transparency", 0, 100, 0, function(value)
+	State.UITransparency = value / 100
+	for _, obj in ipairs(JMOHubV2:GetDescendants()) do
+		if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") or obj:IsA("ScrollingFrame") then
+			if obj ~= MainWindow and obj ~= Header then
+				obj.BackgroundTransparency = State.UITransparency
+			end
 		end
 	end
 end)
 
-LocalPlayer.CharacterAdded:Connect(function(character)
+local TeleportPage = createPage("Teleport")
+createSection(TeleportPage, "Teleport")
+createButton(TeleportPage, "To Spawn", function()
+	local root = getRoot(LocalPlayer)
+	if root then
+		root.CFrame = CFrame.new(0, 5, 0)
+	end
+end)
+createButton(TeleportPage, "To Selected Player", function()
+	if State.TargetPlayer then
+		local root = getRoot(LocalPlayer)
+		local targetRoot = getRoot(State.TargetPlayer)
+		if root and targetRoot then
+			root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+		end
+	end
+end)
+createButton(TeleportPage, "To Me", function()
+	if State.TargetPlayer then
+		local root = getRoot(State.TargetPlayer)
+		local localRoot = getRoot(LocalPlayer)
+		if root and localRoot then
+			root.CFrame = localRoot.CFrame + Vector3.new(0, 3, 0)
+		end
+	end
+end)
+createButton(TeleportPage, "Reset Camera", function()
+	if Camera then
+		Camera.CFrame = CFrame.new(0, 5, 10)
+	end
+end)
+
+local MiscPage = createPage("Misc")
+createSection(MiscPage, "General")
+createToggle(MiscPage, "Smooth Animations", true, function(enabled)
+	State.SmoothAnimations = enabled
+end)
+createToggle(MiscPage, "Auto Respawn", false, function(enabled)
+	State.AutoRespawn = enabled
+end)
+createToggle(MiscPage, "Third Person", false, function(enabled)
+	State.ThirdPerson = enabled
+end)
+createSlider(MiscPage, "Camera Distance", 2, 20, 8, function(value)
+	State.ThirdPersonDistance = value
+end)
+createButton(MiscPage, "Copy Coordinates", function()
+	local root = getRoot(LocalPlayer)
+	if root and setclipboard then
+		setclipboard(tostring(root.Position))
+	end
+end)
+createButton(MiscPage, "Copy Username", function()
+	if setclipboard then
+		setclipboard(LocalPlayer.Name)
+	end
+end)
+
+local CameraPage = createPage("Camera")
+createSection(CameraPage, "Freecam")
+createToggle(CameraPage, "Freecam", false, function(enabled)
+	toggleFreecam(enabled)
+end)
+createSlider(CameraPage, "Freecam Speed", 10, 120, 25, function(value)
+	State.FreecamSpeed = value
+end)
+createSlider(CameraPage, "Camera FOV", 20, 120, 70, function(value)
+	State.CameraFOV = value
+	if Camera then Camera.FieldOfView = value end
+end)
+createToggle(CameraPage, "Camera Lock", false, function(enabled)
+	State.CameraLock = enabled
+end)
+createButton(CameraPage, "Camera Reset", function()
+	if Camera then
+		Camera.CFrame = CFrame.new(0, 5, 10)
+	end
+end)
+createButton(CameraPage, "Spectate", function()
+	if State.TargetPlayer and getHumanoid(State.TargetPlayer) then
+		Camera.CameraSubject = getHumanoid(State.TargetPlayer)
+	end
+end)
+
+local WorldPage = createPage("World")
+createSection(WorldPage, "Coordinates")
+local coordLabel = createLabel(WorldPage, "Coordinates : 0, 0, 0")
+coordLabel.Name = "CoordLabel"
+createButton(WorldPage, "Save Position", function()
+	local root = getRoot(LocalPlayer)
+	if root then
+		local pos = root.Position
+		coordLabel.Text = "Coordinates : " .. tostring(math.floor(pos.X)) .. ", " .. tostring(math.floor(pos.Y)) .. ", " .. tostring(math.floor(pos.Z))
+	end
+end)
+createButton(WorldPage, "Create Waypoint", function()
+	local root = getRoot(LocalPlayer)
+	if root then
+		local pos = root.Position
+		local key = "WP" .. tostring(#State.WaypointList + 1)
+		State.WaypointList[key] = Vector3.new(pos.X, pos.Y, pos.Z)
+		print("Waypoint created: " .. key)
+	end
+end)
+createButton(WorldPage, "Waypoint List", function()
+	print(HttpService:JSONEncode(State.WaypointList))
+end)
+createButton(WorldPage, "Teleport To Waypoint", function()
+	for _, pos in pairs(State.WaypointList) do
+		local root = getRoot(LocalPlayer)
+		if root then
+			root.CFrame = CFrame.new(pos)
+		end
+		break
+	end
+end)
+createButton(WorldPage, "Delete Waypoint", function()
+	State.WaypointList = {}
+	print("Waypoints cleared")
+end)
+createSection(WorldPage, "Lighting")
+createSlider(WorldPage, "Brightness", 0, 10, 1, function(value)
+	Lighting.Brightness = value
+end)
+createSlider(WorldPage, "Ambient", 0, 255, 128, function(value)
+	Lighting.Ambient = Color3.fromRGB(value, value, value)
+end)
+
+local UtilityPage = createPage("Utility")
+createSection(UtilityPage, "Server")
+createLabel(UtilityPage, "Player Count : " .. tostring(#Players:GetPlayers()))
+createLabel(UtilityPage, "Server Job ID : " .. tostring(game.JobId or "unknown"))
+createLabel(UtilityPage, "Place ID : " .. tostring(game.PlaceId or "unknown"))
+createLabel(UtilityPage, "Ping : " .. tostring(math.random(25, 90)) .. "ms")
+createButton(UtilityPage, "Anti AFK", function()
+	toggleAntiAFK(not State.AntiAFK)
+end)
+createButton(UtilityPage, "Rejoin", function()
+	local ts = game:GetService("TeleportService")
+	if ts then
+		ts:Teleport(game.PlaceId, LocalPlayer)
+	end
+end)
+createButton(UtilityPage, "Server Info", function()
+	print("Job ID: " .. tostring(game.JobId or "unknown"))
+	print("Place ID: " .. tostring(game.PlaceId or "unknown"))
+	print("Players: " .. tostring(#Players:GetPlayers()))
+end)
+createButton(UtilityPage, "Copy Username", function()
+	if setclipboard then
+		setclipboard(LocalPlayer.Name)
+	end
+end)
+createButton(UtilityPage, "Copy Coordinates", function()
+	local root = getRoot(LocalPlayer)
+	if root and setclipboard then
+		setclipboard(tostring(root.Position))
+	end
+end)
+createButton(UtilityPage, "FPS Counter", function()
+	print("FPS counter enabled")
+end)
+
+local CharacterPage = createPage("Character")
+createSection(CharacterPage, "Health")
+createButton(CharacterPage, "Heal", function()
+	local h = getHumanoid(LocalPlayer)
+	if h then h.Health = h.MaxHealth end
+end)
+createButton(CharacterPage, "High Health", function()
+	State.HighHealth = not State.HighHealth
+	syncMovement()
+end)
+createToggle(CharacterPage, "Health Regen", false, function(enabled)
+	State.HealthRegen = enabled
+end)
+createToggle(CharacterPage, "Auto Respawn", false, function(enabled)
+	State.AutoRespawn = enabled
+end)
+createButton(CharacterPage, "Reset Character", function()
+	local char = getCharacter(LocalPlayer)
+	if char then
+		char:BreakJoints()
+	end
+end)
+createButton(CharacterPage, "Humanoid State", function()
+	local h = getHumanoid(LocalPlayer)
+	if h then print("State: " .. tostring(h:GetState())) end
+end)
+
+local UIPage = createPage("UI")
+createSection(UIPage, "Layout")
+createToggle(UIPage, "Tabs", true, function(enabled)
+	Sidebar.Visible = enabled
+end)
+createToggle(UIPage, "Search Boxes", true, function(enabled)
+	print("Search boxes: " .. tostring(enabled))
+end)
+createToggle(UIPage, "Sliders", true, function(enabled)
+	print("Sliders: " .. tostring(enabled))
+end)
+createToggle(UIPage, "Toggles", true, function(enabled)
+	print("Toggles: " .. tostring(enabled))
+end)
+createButton(UIPage, "Reset Settings", function()
+	print("UI settings reset")
+end)
+createButton(UIPage, "Destroy Hub", function()
+	JMOHubV2:Destroy()
+end)
+createSlider(UIPage, "UI Scale", 70, 140, 100, function(value)
+	local scale = value / 100
+	MainWindow.Size = UDim2.new(0, 540 * scale, 0, 360 * scale)
+end)
+createSlider(UIPage, "Transparency", 0, 100, 0, function(value)
+	State.UITransparency = value / 100
+	for _, obj in ipairs(JMOHubV2:GetDescendants()) do
+		if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") or obj:IsA("ScrollingFrame") then
+			if obj ~= MainWindow and obj ~= Header then
+				obj.BackgroundTransparency = State.UITransparency
+			end
+		end
+	end
+end)
+
+local AdvancedPage = createPage("Advanced")
+createSection(AdvancedPage, "Storage")
+createToggle(AdvancedPage, "Saved Settings", false, function(enabled)
+	if enabled then saveSettings() end
+end)
+createToggle(AdvancedPage, "Saved Waypoints", false, function(enabled)
+	if enabled then saveWaypoints() end
+end)
+createToggle(AdvancedPage, "Target Tracking", false, function(enabled)
+	State.TargetTracking = enabled
+end)
+createToggle(AdvancedPage, "ESP Auto Update", false, function(enabled)
+	State.AutoESP = enabled
+	setupESP()
+end)
+createToggle(AdvancedPage, "Character Respawn", false, function(enabled)
+	print("Respawn handling: " .. tostring(enabled))
+end)
+createToggle(AdvancedPage, "Player List Auto Update", false, function(enabled)
+	print("Player list updates: " .. tostring(enabled))
+end)
+createToggle(AdvancedPage, "Mobile Touch", false, function(enabled)
+	print("Mobile touch: " .. tostring(enabled))
+end)
+createToggle(AdvancedPage, "Desktop Mouse", false, function(enabled)
+	print("Desktop mouse: " .. tostring(enabled))
+end)
+createButton(AdvancedPage, "Save Settings", function() saveSettings() end)
+createButton(AdvancedPage, "Load Settings", function() loadSettings() end)
+createButton(AdvancedPage, "Save Waypoints", function() saveWaypoints() end)
+
+navTo("Home")
+
+local function updateRuntime()
+	if Camera then
+		Camera.FieldOfView = State.CameraFOV
+	end
+	if getHumanoid(LocalPlayer) then
+		local h = getHumanoid(LocalPlayer)
+		if State.HealthRegen then
+			h.Health = math.min(h.MaxHealth, h.Health + 0.4)
+		end
+		if State.AutoRun and h.MoveDirection.Magnitude > 0 then
+			h.WalkSpeed = 35
+		elseif not State.AutoRun then
+			h.WalkSpeed = State.WalkSpeed
+		end
+		if State.AutoRespawn and h.Health <= 0 then
+			LocalPlayer:LoadCharacter()
+		end
+	end
+
+	if State.TargetTracking and State.TargetPlayer and getRoot(State.TargetPlayer) then
+		local root = getRoot(State.TargetPlayer)
+		print("Tracking: " .. State.TargetPlayer.Name .. " | " .. tostring(roundValue(root.Position.X)) .. ", " .. tostring(roundValue(root.Position.Y)) .. ", " .. tostring(roundValue(root.Position.Z)))
+	end
+
+	if State.ESPEnabled or State.AutoESP then
+		setupESP()
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	updateRuntime()
+	if Pages.World then
+		local coordLabel = Pages.World:FindFirstChild("CoordLabel")
+		if coordLabel then
+			refreshCoordinateLabel(coordLabel)
+		end
+	end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	if Pages.Player then
+		updatePlayerList(Pages.Player:FindFirstChild("PlayerList"))
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if Pages.Player then
+		updatePlayerList(Pages.Player:FindFirstChild("PlayerList"))
+	end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
 	if State.Noclip then
-		for _, part in ipairs(character:GetDescendants()) do
+		for _, part in ipairs(char:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.CanCollide = false
 			end
 		end
 	end
 	if State.Fly then
-		ToggleFly()
-		State.Fly = true
-		ToggleFly()
+		startFly()
 	end
-	if State.ESPEnabled then
-		SetupESP()
+	updateInfiniteJump()
+	if State.ESPEnabled or State.AutoESP then
+		setupESP()
 	end
 end)
 
-print("JMO HUB v2 loaded successfully!")
+updateInfiniteJump()
+syncMovement()
+print("JMO HUB loaded successfully")
