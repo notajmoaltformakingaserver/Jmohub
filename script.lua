@@ -649,7 +649,7 @@ local function updateRuntime()
 					local targetRoot = getRoot(player)
 					if targetHumanoid and targetRoot then
 						local direction = (targetRoot.Position - cameraPos).Unit
-						local angle = math.deg(math.acos(math.clamp(direction:Dot(cameraLook), -1, 1)))
+						local angle = math.deg(math.acos(clamp(direction:Dot(cameraLook), -1, 1)))
 						if angle < bestDistance then
 							bestDistance = angle
 							bestPlayer = player
@@ -675,6 +675,7 @@ MainWindow.Position = UDim2.new(0.5, -280, 0.5, -180)
 MainWindow.BackgroundColor3 = Theme.Background
 MainWindow.BorderSizePixel = 1
 MainWindow.BorderColor3 = Theme.Border
+MainWindow.Visible = true
 MainWindow.Parent = JMOHubV2
 
 local Gradient = Instance.new("UIGradient")
@@ -735,6 +736,7 @@ local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, 0, 1, -32)
 Content.Position = UDim2.new(0, 0, 0, 32)
 Content.BackgroundTransparency = 1
+Content.Visible = true
 Content.Parent = MainWindow
 
 local Sidebar = Instance.new("ScrollingFrame")
@@ -744,16 +746,20 @@ Sidebar.BorderSizePixel = 0
 Sidebar.ScrollBarThickness = 3
 Sidebar.ScrollBarImageColor3 = Theme.Border
 Sidebar.CanvasSize = UDim2.new(0, 0, 0, 600)
+Sidebar.Visible = true
 Sidebar.Parent = Content
 
 local SidebarLayout = Instance.new("UIListLayout")
 SidebarLayout.Padding = UDim.new(0, 6)
+SidebarLayout.FillDirection = Enum.FillDirection.Vertical
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SidebarLayout.Parent = Sidebar
 
 local MainDisplay = Instance.new("Frame")
 MainDisplay.Size = UDim2.new(1, -130, 1, 0)
 MainDisplay.Position = UDim2.new(0, 130, 0, 0)
 MainDisplay.BackgroundTransparency = 1
+MainDisplay.Visible = true
 MainDisplay.Parent = Content
 
 local Pages = {}
@@ -809,11 +815,14 @@ local function createPage(name)
 	page.BackgroundTransparency = 1
 	page.ScrollBarThickness = 4
 	page.ScrollBarImageColor3 = Theme.Border
+	page.CanvasSize = UDim2.new(0, 0, 0, 1000)
 	page.Visible = false
 	page.Parent = MainDisplay
 
 	local list = Instance.new("UIListLayout")
 	list.Padding = UDim.new(0, 8)
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.Parent = page
 
 	local pad = Instance.new("UIPadding")
