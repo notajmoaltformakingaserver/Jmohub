@@ -55,6 +55,19 @@ local State = {
 	FreecamConnection = nil,
 	AntiAFKConnection = nil,
 	JumpConnection = nil,
+	GodMode = false,
+	SpeedBoost = false,
+	SpeedBoostMultiplier = 2,
+	AimAssist = false,
+	AimAssistFOV = 30,
+	HitboxExpander = false,
+	HitboxMultiplier = 2,
+	DamageNotifier = false,
+	TeleportToMouse = false,
+	PartChams = false,
+	NoFall = false,
+	WallWalk = false,
+	AutoSprint = false,
 }
 
 local JMOHubV2 = Instance.new("ScreenGui")
@@ -385,20 +398,25 @@ local function startFly()
 
 	local velocity = Instance.new("BodyVelocity")
 	velocity.Name = "JMOFlyVelocity"
-	velocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+	velocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 	velocity.Velocity = Vector3.zero
 	velocity.Parent = root
 
 	local gyro = Instance.new("BodyGyro")
 	gyro.Name = "JMOFlyGyro"
-	gyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+	gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	gyro.D = 500
+	gyro.P = 10000
 	gyro.Parent = root
 
 	State.FlyConnection = RunService.RenderStepped:Connect(function()
-		if not State.Fly then return end
+		if not State.Fly then
+			if velocity then velocity.Velocity = Vector3.zero end
+			return
+		end
 		local localRoot = getRoot(LocalPlayer)
 		local camera = Workspace.CurrentCamera
-		if not localRoot or not camera then return end
+		if not localRoot or not camera or not gyro.Parent then return end
 		local direction = Vector3.zero
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction += camera.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction -= camera.CFrame.LookVector end
@@ -407,7 +425,7 @@ local function startFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.new(0, 1, 0) end
 		velocity.Velocity = direction.Magnitude > 0 and direction.Unit * State.FlySpeed or Vector3.zero
-		gyro.CFrame = CFrame.new(localRoot.Position, localRoot.Position + camera.CFrame.LookVector)
+		gyro.CFrame = camera.CFrame
 	end)
 end
 
@@ -486,6 +504,92 @@ local function updateInfiniteJump()
 	end
 end
 
+local function toggleGodMode(enabled)
+	State.GodMode = enabled
+	local humanoid = getHumanoid(LocalPlayer)
+	if humanoid then
+		humanoid.MaxHealth = enabled and math.huge or 100
+		if enabled then humanoid.Health = humanoid.MaxHealth end
+	end
+end
+
+local function toggleSpeedBoost(enabled)
+	State.SpeedBoost = enabled
+	if enabled then
+		local humanoid = getHumanoid(LocalPlayer)
+		if humanoid then
+			humanoid.WalkSpeed = State.WalkSpeed * State.SpeedBoostMultiplier
+		end
+	else
+		syncMovement()
+	end
+end
+
+local function toggleAimAssist(enabled)
+	State.AimAssist = enabled
+end
+
+local function toggleHitboxExpander(enabled)
+	State.HitboxExpander = enabled
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			for _, part in ipairs(player.Character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					if enabled then
+						part.Size = part.Size * State.HitboxMultiplier
+					end
+				end
+			end
+		end
+	end
+end
+
+local function toggleNoFall(enabled)
+	State.NoFall = enabled
+end
+
+local function toggleWallWalk(enabled)
+	State.WallWalk = enabled
+end
+
+local function setupPartChams()
+	if not State.PartChams then
+		for _, obj in pairs(State.ChamObjects or {}) do
+			if obj and obj.Parent then obj:Destroy() end
+		end
+		State.ChamObjects = {}
+		return
+	end
+	
+	for _, part in ipairs(Workspace:GetDescendants()) do
+		if part:IsA("BasePart") and not part.Parent:FindFirstChildOfClass("Humanoid") then
+			local existing = part:FindFirstChild("JMOCham")
+			if not existing then
+				local h = Instance.new("Highlight")
+				h.Name = "JMOCham"
+				h.Adornee = part
+				h.FillTransparency = 0.5
+				h.OutlineColor = Theme.Green
+				h.OutlineTransparency = 0
+				h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				h.Parent = part
+				if not State.ChamObjects then State.ChamObjects = {} end
+				State.ChamObjects[part.Name] = h
+			end
+		end
+	end
+end
+
+local DamageNotifications = {}
+local function addDamageNotification(player, damage)
+	if not State.DamageNotifier then return end
+	table.insert(DamageNotifications, {
+		player = player.Name,
+		damage = math.floor(damage),
+		time = tick()
+	})
+end
+
 local function syncMovement()
 	local humanoid = getHumanoid(LocalPlayer)
 	if humanoid then
@@ -510,12 +614,57 @@ local function updateRuntime()
 		end
 		if State.AutoRun and humanoid.MoveDirection.Magnitude > 0 then
 			humanoid.WalkSpeed = 35
-		elseif not State.AutoRun then
+		elseif not State.AutoRun and not State.SpeedBoost then
 			humanoid.WalkSpeed = State.WalkSpeed
+		end
+		if State.GodMode then
+			humanoid.Health = humanoid.MaxHealth
 		end
 	end
 	if State.ESPEnabled then
 		setupESP()
+	end
+	if State.PartChams then
+		setupPartChams()
+	end
+	if State.NoFall then
+		local root = getRoot(LocalPlayer)
+		if root then
+			local humanoidState = humanoid and humanoid:GetState()
+			if humanoidState == Enum.HumanoidStateType.Falling then
+				root.Velocity = Vector3.new(root.Velocity.X, 0, root.Velocity.Z)
+			end
+		end
+	end
+	if State.AimAssist then
+		local camera = Workspace.CurrentCamera
+		if camera then
+			local bestPlayer = nil
+			local bestDistance = State.AimAssistFOV
+			local cameraPos = camera.CFrame.Position
+			local cameraLook = camera.CFrame.LookVector
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and player.Character then
+					local targetHumanoid = getHumanoid(player)
+					local targetRoot = getRoot(player)
+					if targetHumanoid and targetRoot then
+						local direction = (targetRoot.Position - cameraPos).Unit
+						local angle = math.deg(math.acos(math.clamp(direction:Dot(cameraLook), -1, 1)))
+						if angle < bestDistance then
+							bestDistance = angle
+							bestPlayer = player
+						end
+					end
+				end
+			end
+			if bestPlayer then
+				local targetRoot = getRoot(bestPlayer)
+				if targetRoot then
+					local newCFrame = CFrame.new(camera.CFrame.Position, targetRoot.Position + Vector3.new(0, 1, 0))
+					Camera.CFrame = Camera.CFrame:Lerp(newCFrame, 0.1)
+				end
+			end
+		end
 	end
 end
 
@@ -811,6 +960,12 @@ createToggle(MovementPage, "Auto Run", false, function(enabled)
 		humanoid.WalkSpeed = enabled and 30 or State.WalkSpeed
 	end
 end)
+createToggle(MovementPage, "Speed Boost", false, function(enabled)
+	toggleSpeedBoost(enabled)
+end)
+createToggle(MovementPage, "Auto Sprint", false, function(enabled)
+	State.AutoSprint = enabled
+end)
 createSlider(MovementPage, "Fly Speed", 10, 150, 45, function(value)
 	State.FlySpeed = value
 end)
@@ -826,17 +981,22 @@ createSlider(MovementPage, "Gravity", 0, 400, 196, function(value)
 	State.GravityValue = value
 	Workspace.Gravity = value
 end)
+createSlider(MovementPage, "Speed Multiplier", 1, 5, 2, function(value)
+	State.SpeedBoostMultiplier = value
+end)
 createButton(MovementPage, "Movement Reset", function()
 	State.Fly = false
 	State.InfiniteJump = false
 	State.Noclip = false
 	State.AutoRun = false
+	State.SpeedBoost = false
 	State.WalkSpeed = 16
 	State.JumpPower = 50
 	State.GravityValue = 196.2
 	Workspace.Gravity = 196.2
 	toggleFly(false)
 	toggleNoclip(false)
+	toggleSpeedBoost(false)
 	updateInfiniteJump()
 	syncMovement()
 end)
@@ -851,6 +1011,9 @@ end)
 createToggle(VisualPage, "Remove Fog", false, function(enabled)
 	State.RemoveFog = enabled
 	Lighting.FogEnd = enabled and 100000 or 100
+end)
+createToggle(VisualPage, "Part Chams", false, function(enabled)
+	setupPartChams()
 end)
 createSlider(VisualPage, "FOV", 20, 120, 70, function(value)
 	State.CameraFOV = value
@@ -896,6 +1059,7 @@ createButton(WorldPage, "Save Position", function()
 		coordLabel.Text = "Coordinates : " .. tostring(math.floor(pos.X)) .. ", " .. tostring(math.floor(pos.Y)) .. ", " .. tostring(math.floor(pos.Z))
 	end
 end)
+createSection(WorldPage, "Teleportation")
 createButton(WorldPage, "Create Waypoint", function()
 	local root = getRoot(LocalPlayer)
 	if root then
@@ -912,50 +1076,21 @@ createButton(WorldPage, "Teleport To Waypoint", function()
 		break
 	end
 end)
+createButton(WorldPage, "Teleport To Mouse", function()
+	local mouse = LocalPlayer:GetMouse()
+	if mouse.Target then
+		local root = getRoot(LocalPlayer)
+		if root then
+			root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+		end
+	end
+end)
+createSection(WorldPage, "Lighting")
 createSlider(WorldPage, "Brightness", 0, 10, 1, function(value)
 	Lighting.Brightness = value
 end)
 createSlider(WorldPage, "Ambient", 0, 255, 128, function(value)
 	Lighting.Ambient = Color3.fromRGB(value, value, value)
-end)
-
-local UtilityPage = createPage("Utility")
-createSection(UtilityPage, "Server")
-createLabel(UtilityPage, "Player Count : " .. tostring(#Players:GetPlayers()))
-createLabel(UtilityPage, "Server Job ID : " .. tostring(game.JobId or "unknown"))
-createLabel(UtilityPage, "Place ID : " .. tostring(game.PlaceId or "unknown"))
-createButton(UtilityPage, "Anti AFK", function()
-	if State.AntiAFKConnection then
-		State.AntiAFKConnection:Disconnect()
-		State.AntiAFKConnection = nil
-	else
-		State.AntiAFKConnection = LocalPlayer.Idled:Connect(function()
-			local vm = game:GetService("VirtualInputManager")
-			vm:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-			vm:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-		end)
-	end
-end)
-createButton(UtilityPage, "Rejoin", function()
-	local TeleportService = game:GetService("TeleportService")
-	if TeleportService then TeleportService:Teleport(game.PlaceId, LocalPlayer) end
-end)
-createButton(UtilityPage, "Copy Username", function()
-	if setclipboard then setclipboard(LocalPlayer.Name) end
-end)
-
-local CharacterPage = createPage("Character")
-createSection(CharacterPage, "Health")
-createButton(CharacterPage, "Heal", function()
-	local humanoid = getHumanoid(LocalPlayer)
-	if humanoid then humanoid.Health = humanoid.MaxHealth end
-end)
-createButton(CharacterPage, "High Health", function()
-	State.HighHealth = not State.HighHealth
-	syncMovement()
-end)
-createToggle(CharacterPage, "Health Regen", false, function(enabled)
-	State.HealthRegen = enabled
 end)
 
 local UIPage = createPage("UI")
@@ -968,7 +1103,66 @@ createSlider(UIPage, "UI Scale", 70, 140, 100, function(value)
 	MainWindow.Size = UDim2.new(0, 560 * scale, 0, 360 * scale)
 end)
 
+local MiscPage = createPage("Misc")
+createSection(MiscPage, "Server Info")
+createLabel(MiscPage, "Player Count : " .. tostring(#Players:GetPlayers()))
+createLabel(MiscPage, "Server Job ID : " .. tostring(game.JobId or "unknown"))
+createLabel(MiscPage, "Place ID : " .. tostring(game.PlaceId or "unknown"))
+createSection(MiscPage, "Utilities")
+createButton(MiscPage, "Anti AFK", function()
+	if State.AntiAFKConnection then
+		State.AntiAFKConnection:Disconnect()
+		State.AntiAFKConnection = nil
+	else
+		State.AntiAFKConnection = LocalPlayer.Idled:Connect(function()
+			local vm = game:GetService("VirtualInputManager")
+			vm:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+			vm:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+		end)
+	end
+end)
+createButton(MiscPage, "Rejoin", function()
+	local TeleportService = game:GetService("TeleportService")
+	if TeleportService then TeleportService:Teleport(game.PlaceId, LocalPlayer) end
+end)
+createButton(MiscPage, "Copy Username", function()
+	if setclipboard then setclipboard(LocalPlayer.Name) end
+end)
+createButton(MiscPage, "Copy Job ID", function()
+	if setclipboard then setclipboard(game.JobId) end
+end)
+
 local AdvancedPage = createPage("Advanced")
+createSection(AdvancedPage, "Combat")
+createToggle(AdvancedPage, "Aim Assist", false, function(enabled)
+	toggleAimAssist(enabled)
+end)
+createSlider(AdvancedPage, "Aim FOV", 5, 90, 30, function(value)
+	State.AimAssistFOV = value
+end)
+createToggle(AdvancedPage, "Hitbox Expander", false, function(enabled)
+	toggleHitboxExpander(enabled)
+end)
+createSlider(AdvancedPage, "Hitbox Size", 1, 5, 2, function(value)
+	State.HitboxMultiplier = value
+end)
+createSection(AdvancedPage, "Movement")
+createToggle(AdvancedPage, "Speed Boost", false, function(enabled)
+	toggleSpeedBoost(enabled)
+end)
+createSlider(AdvancedPage, "Speed Multiplier", 1, 5, 2, function(value)
+	State.SpeedBoostMultiplier = value
+end)
+createToggle(AdvancedPage, "Auto Sprint", false, function(enabled)
+	State.AutoSprint = enabled
+end)
+createSection(AdvancedPage, "Visual & Detection")
+createToggle(AdvancedPage, "Part Chams", false, function(enabled)
+	setupPartChams()
+end)
+createToggle(AdvancedPage, "Damage Notifier", false, function(enabled)
+	State.DamageNotifier = enabled
+end)
 createSection(AdvancedPage, "Storage")
 createToggle(AdvancedPage, "Saved Settings", false, function(enabled)
 	if enabled then
