@@ -141,6 +141,18 @@ Title.TextSize = 18
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
+local guiScale = 0.96
+local dragToggle = false
+local dragStart, dragStartPos
+
+local function applyWindowSize(scaleValue)
+	guiScale = scaleValue
+	local w = math.clamp(math.floor(860 * guiScale), 620, 860)
+	local h = math.clamp(math.floor(500 * guiScale), 350, 500)
+	MainFrame.Size = UDim2.new(0, w, 0, h)
+	MainFrame.Position = UDim2.new(0.5, -w / 2, 0.5, -h / 2)
+end
+
 local CloseButton = Instance.new("TextButton")
 CloseButton.Size = UDim2.new(0, 32, 0, 32)
 CloseButton.Position = UDim2.new(1, -40, 0.5, -16)
@@ -170,11 +182,33 @@ makeRoundedCorner(MinimizeButton, 8)
 local Minimized = false
 MinimizeButton.MouseButton1Click:Connect(function()
 	Minimized = not Minimized
-	local targetSize = Minimized and UDim2.new(0, 860, 0, 72) or UDim2.new(0, 860, 0, 500)
+	local targetSize = Minimized and UDim2.new(0, MainFrame.AbsoluteSize.X, 0, 42) or UDim2.new(0, MainFrame.AbsoluteSize.X, 0, MainFrame.Size.Y.Offset)
 	TweenService:Create(MainFrame, TweenInfo.new(0.18), { Size = targetSize }):Play()
 	Sidebar.Visible = not Minimized
 	Content.Visible = not Minimized
 end)
+
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragToggle = true
+		dragStart = input.Position
+		dragStartPos = MainFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragToggle = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragToggle and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - dragStart
+		MainFrame.Position = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
+	end
+end)
+
+applyWindowSize(guiScale)
 
 local Sidebar = Instance.new("Frame")
 Sidebar.Name = "Sidebar"
@@ -250,6 +284,35 @@ local function createPageTab(name)
 		setPage(name)
 	end)
 	return tab
+end
+
+local function createFlingSelector(parent)
+	local dropdown = Instance.new("TextButton")
+	dropdown.Size = UDim2.new(1, 0, 0, 36)
+	dropdown.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+	dropdown.BorderSizePixel = 0
+	dropdown.Text = "Fling: Nearby"
+	dropdown.TextColor3 = Color3.fromRGB(240, 240, 240)
+	dropdown.Font = Enum.Font.GothamBold
+	dropdown.TextSize = 13
+	dropdown.Parent = parent
+	makeRoundedCorner(dropdown, 8)
+
+	local options = {"Nearby", "All", "Target"}
+	local index = 1
+
+	local function cycle()
+		index = index % #options + 1
+		dropdown.Text = "Fling: " .. options[index]
+	end
+
+	dropdown.MouseButton1Click:Connect(cycle)
+	return {
+		GetMode = function()
+			return options[index]
+		end,
+		Cycle = cycle,
+	}
 end
 
 local HomePage = createPage("Home")
@@ -394,15 +457,24 @@ homeGrid.BackgroundTransparency = 1
 homeGrid.Parent = HomePage
 makeGrid(homeGrid, 2)
 
-makeButton(homeGrid, "Fling Nearby", function()
+local flingMode = createFlingSelector(homeGrid)
+makeButton(homeGrid, "Fling Now", function()
+	local mode = flingMode.GetMode()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local root = getRootCharacter(player)
 			if root then
-				local velocity = (root.Position - (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position or root.Position)).Unit * 120
+				local fromPosition = (LocalPlayer.Character and getRootCharacter(LocalPlayer)) and (LocalPlayer.Character and getRootCharacter(LocalPlayer).Position) or root.Position
+				local dir = (root.Position - fromPosition)
+				if mode == "All" then
+					dir = Vector3.new(0, 1, 0)
+				elseif mode == "Target" then
+					dir = (Mouse.Hit.Position - root.Position)
+				end
+				local velocity = dir.Unit * 120
 				local bodyVelocity = Instance.new("BodyVelocity")
 				bodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-				bodyVelocity.Velocity = Vector3.new(velocity.X, 85, velocity.Z)
+				bodyVelocity.Velocity = Vector3.new(velocity.X, math.max(velocity.Y, 85), velocity.Z)
 				bodyVelocity.Parent = root
 				task.delay(1.25, function()
 					if bodyVelocity and bodyVelocity.Parent then
@@ -897,6 +969,10 @@ makeButton(settingsGrid, "Theme Red", function()
 	Header.BackgroundColor3 = Color3.fromRGB(35, 15, 15)
 	Title.TextColor3 = Color3.fromRGB(255, 80, 80)
 end, 1, 1)
+
+local sizeSlider = createSlider(settingsGrid, "Window Size", 0.7, 1.1, 0.96, function(value)
+	applyWindowSize(value)
+end)
 
 makeButton(settingsGrid, "Close Hub", function()
 	ScreenGui:Destroy()
