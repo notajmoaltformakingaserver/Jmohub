@@ -5,6 +5,7 @@ local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
@@ -299,6 +300,91 @@ end
 
 local function addSimpleButton(page, title, callback)
 	return addAction(page, nil, title, callback)
+end
+
+local function createSlider(parent, labelText, minValue, maxValue, defaultValue, callback)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 50)
+	container.BackgroundTransparency = 1
+	container.Parent = parent
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 18)
+	label.BackgroundTransparency = 1
+	label.Text = labelText .. ": " .. tostring(defaultValue)
+	label.TextColor3 = Color3.fromRGB(240, 240, 240)
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 12
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 10)
+	track.Position = UDim2.new(0, 0, 0, 20)
+	track.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	track.BorderSizePixel = 0
+	track.Parent = container
+	makeRoundedCorner(track, 5)
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(0, 255, 110)
+	fill.BorderSizePixel = 0
+	fill.Parent = track
+	makeRoundedCorner(fill, 5)
+
+	local knob = Instance.new("TextButton")
+	knob.Size = UDim2.new(0, 14, 0, 14)
+	knob.Position = UDim2.new(0, 0, 0.5, -7)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	knob.BorderSizePixel = 0
+	knob.Text = ""
+	knob.Parent = track
+	makeRoundedCorner(knob, 7)
+
+	local currentValue = defaultValue
+
+	local function updateSlider(rawValue)
+		currentValue = math.clamp(rawValue, minValue, maxValue)
+		local percent = (currentValue - minValue) / (maxValue - minValue)
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+		knob.Position = UDim2.new(percent, -7, 0.5, -7)
+		label.Text = labelText .. ": " .. tostring(math.floor(currentValue))
+		if callback then
+			callback(currentValue)
+		end
+	end
+
+	knob.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+			return
+		end
+
+		local connection
+		connection = UserInputService.InputChanged:Connect(function(inputObject)
+			if inputObject.UserInputType == Enum.UserInputType.MouseMovement then
+				local mouseX = inputObject.Position.X
+				local startX = track.AbsolutePosition.X
+				local totalWidth = track.AbsoluteSize.X
+				local percent = math.clamp((mouseX - startX) / totalWidth, 0, 1)
+				updateSlider(minValue + (maxValue - minValue) * percent)
+			end
+		end)
+
+		UserInputService.InputEnded:Connect(function(inputObject)
+			if inputObject.UserInputType == Enum.UserInputType.MouseButton1 then
+				connection:Disconnect()
+			end
+		end)
+	end)
+
+	updateSlider(defaultValue)
+	return {
+		GetValue = function()
+			return currentValue
+		end,
+		SetValue = updateSlider,
+	}
 end
 
 local HomeSection = addSection(HomePage, "Quick Actions")
@@ -602,10 +688,138 @@ end, 1, 1)
 
 local utilitySection = addSection(UtilityPage, "Utility")
 local utilGrid = Instance.new("Frame")
-utilGrid.Size = UDim2.new(1, 0, 0, 180)
+utilGrid.Size = UDim2.new(1, 0, 0, 260)
 utilGrid.BackgroundTransparency = 1
 utilGrid.Parent = UtilityPage
 makeGrid(utilGrid, 2)
+
+local flightEnabled = false
+local flightSpeed = 55
+local flightVelocity = nil
+local flightGyro = nil
+local flightLoop = nil
+local flightButton = nil
+
+local function updateFlightButton()
+	if flightButton then
+		flightButton.Text = flightEnabled and "Flight: ON" or "Flight: OFF"
+		flightButton.BackgroundColor3 = flightEnabled and Color3.fromRGB(0, 255, 110) or Color3.fromRGB(28, 28, 28)
+		flightButton.TextColor3 = flightEnabled and Color3.fromRGB(12, 12, 12) or Color3.fromRGB(240, 240, 240)
+	end
+end
+
+local function setFlightState(enabled)
+	flightEnabled = enabled
+	local char = LocalPlayer.Character
+	if char then
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.PlatformStand = enabled
+		end
+	end
+
+	if not flightEnabled then
+		if flightVelocity then
+			flightVelocity:Destroy()
+			flightVelocity = nil
+		end
+		if flightGyro then
+			flightGyro:Destroy()
+			flightGyro = nil
+		end
+		if flightLoop then
+			flightLoop:Disconnect()
+			flightLoop = nil
+		end
+		if char then
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end
+
+	if flightEnabled then
+		char = LocalPlayer.Character
+		if char then
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if root then
+				flightVelocity = Instance.new("BodyVelocity")
+				flightVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+				flightVelocity.Velocity = Vector3.new(0, 0, 0)
+				flightVelocity.Parent = root
+
+				flightGyro = Instance.new("BodyGyro")
+				flightGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+				flightGyro.CFrame = root.CFrame
+				flightGyro.Parent = root
+			end
+		end
+
+		if flightLoop then
+			flightLoop:Disconnect()
+		end
+
+		flightLoop = RunService.RenderStepped:Connect(function()
+			if not flightEnabled then
+				return
+			end
+			local activeChar = LocalPlayer.Character
+			if not activeChar then
+				return
+			end
+			local root = activeChar:FindFirstChild("HumanoidRootPart")
+			if not root or not flightVelocity or not flightGyro then
+				return
+			end
+			local moveVector = Vector3.new(0, 0, 0)
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector += Vector3.new(0, 0, -1) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector += Vector3.new(0, 0, 1) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector += Vector3.new(-1, 0, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector += Vector3.new(1, 0, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0, 1, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector += Vector3.new(0, -1, 0) end
+
+			local camera = Workspace.CurrentCamera
+			if camera then
+				local forward = camera.CFrame.LookVector
+				local right = camera.CFrame.RightVector
+				local flatForward = Vector3.new(forward.X, 0, forward.Z)
+				local flatRight = Vector3.new(right.X, 0, right.Z)
+				if flatForward.Magnitude > 0 then
+					flatForward = flatForward.Unit
+				end
+				if flatRight.Magnitude > 0 then
+					flatRight = flatRight.Unit
+				end
+				local direction = (flatForward * moveVector.Z + flatRight * moveVector.X + Vector3.new(0, moveVector.Y, 0))
+				if direction.Magnitude > 0 then
+					direction = direction.Unit * flightSpeed
+					flightVelocity.Velocity = direction
+				else
+					flightVelocity.Velocity = Vector3.new(0, 0, 0)
+				end
+				flightGyro.CFrame = CFrame.new(root.Position, root.Position + camera.CFrame.LookVector)
+			end
+		end)
+	end
+
+	updateFlightButton()
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+	if flightEnabled then
+		setFlightState(false)
+	end
+end)
+
+flightButton = makeButton(utilGrid, "Flight: OFF", function()
+	setFlightState(not flightEnabled)
+end, 1, 1)
+
+local flightSlider = createSlider(utilGrid, "Flight Speed", 10, 200, 55, function(value)
+	flightSpeed = value
+end)
 
 local noclipEnabled = false
 makeButton(utilGrid, "Noclip", function()
@@ -631,8 +845,8 @@ makeButton(utilGrid, "Noclip", function()
 	end
 end, 1, 1)
 
+local jumpConnection = nil
 makeButton(utilGrid, "Infinite Jump", function()
-	local jumpConnection
 	if jumpConnection then
 		jumpConnection:Disconnect()
 		jumpConnection = nil
