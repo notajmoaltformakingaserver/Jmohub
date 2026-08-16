@@ -141,12 +141,12 @@ Title.TextSize = 18
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
-local guiScale = 0.96
+local guiScale = 0.76
 local dragToggle = false
 local dragStart, dragStartPos
 
 local function applyWindowSize(scaleValue)
-	guiScale = scaleValue
+	guiScale = math.clamp(scaleValue, 0.7, 1.1)
 	local w = math.clamp(math.floor(860 * guiScale), 620, 860)
 	local h = math.clamp(math.floor(500 * guiScale), 350, 500)
 	MainFrame.Size = UDim2.new(0, w, 0, h)
@@ -786,7 +786,7 @@ local function setFlightState(enabled)
 	if char then
 		local humanoid = char:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.PlatformStand = enabled
+			humanoid.PlatformStand = false
 		end
 	end
 
@@ -807,6 +807,7 @@ local function setFlightState(enabled)
 			local root = char:FindFirstChild("HumanoidRootPart")
 			if root then
 				root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 			end
 		end
 	end
@@ -844,13 +845,17 @@ local function setFlightState(enabled)
 			if not root or not flightVelocity or not flightGyro then
 				return
 			end
-			local moveVector = Vector3.new(0, 0, 0)
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector += Vector3.new(0, 0, -1) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector += Vector3.new(0, 0, 1) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector += Vector3.new(-1, 0, 0) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector += Vector3.new(1, 0, 0) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0, 1, 0) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector += Vector3.new(0, -1, 0) end
+
+			local runForward = 0
+			local runRight = 0
+			local runUp = 0
+
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then runForward += 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then runForward -= 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then runRight += 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then runRight -= 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then runUp += 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then runUp -= 1 end
 
 			local camera = Workspace.CurrentCamera
 			if camera then
@@ -858,13 +863,10 @@ local function setFlightState(enabled)
 				local right = camera.CFrame.RightVector
 				local flatForward = Vector3.new(forward.X, 0, forward.Z)
 				local flatRight = Vector3.new(right.X, 0, right.Z)
-				if flatForward.Magnitude > 0 then
-					flatForward = flatForward.Unit
-				end
-				if flatRight.Magnitude > 0 then
-					flatRight = flatRight.Unit
-				end
-				local direction = (flatForward * moveVector.Z + flatRight * moveVector.X + Vector3.new(0, moveVector.Y, 0))
+				if flatForward.Magnitude > 0 then flatForward = flatForward.Unit end
+				if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+
+				local direction = (flatForward * runForward) + (flatRight * runRight) + Vector3.new(0, runUp, 0)
 				if direction.Magnitude > 0 then
 					direction = direction.Unit * flightSpeed
 					flightVelocity.Velocity = direction
@@ -939,6 +941,47 @@ makeButton(utilGrid, "Remove Fog", function()
 	Lighting.FogEnd = 100000
 	Lighting.FogStart = 100000
 	Lighting.Brightness = 2
+end, 1, 1)
+
+makeButton(utilGrid, "Lag All (Experimental)", function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			local root = getRootCharacter(player)
+			if root then
+				local hum = player.Character:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.WalkSpeed = 0
+					hum.JumpPower = 0
+				end
+
+				local velocity = Instance.new("BodyVelocity")
+				velocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+				velocity.Velocity = Vector3.new(0, 0, 0)
+				velocity.Parent = root
+
+				local spin = Instance.new("BodyAngularVelocity")
+				spin.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+				spin.AngularVelocity = Vector3.new(0, 2000, 0)
+				spin.Parent = root
+
+				task.spawn(function()
+					for _ = 1, 70 do
+						if root and root.Parent then
+							root.AssemblyLinearVelocity = Vector3.new(math.random(-600, 600), math.random(-200, 200), math.random(-600, 600))
+							root.AssemblyAngularVelocity = Vector3.new(math.random(-1500, 1500), math.random(-1500, 1500), math.random(-1500, 1500))
+						end
+						task.wait(0.05)
+					end
+					if velocity and velocity.Parent then velocity:Destroy() end
+					if spin and spin.Parent then spin:Destroy() end
+					if hum then
+						hum.WalkSpeed = 16
+						hum.JumpPower = 50
+					end
+				end)
+			end
+		end
+	end
 end, 1, 1)
 
 makeButton(utilGrid, "Reset Camera", function()
